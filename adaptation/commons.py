@@ -52,6 +52,23 @@ def notify(*args, **kwargs):
 
 
 @app.task()
+def image_processing(src, dest):
+    print "(------------"
+    random_uuid = uuid.uuid4().hex
+    context={"original_file": src, "folder_out": config["folder_out"] + dest + "/", "id": random_uuid}
+    
+    if not os.path.exists(context['folder_out']):
+        os.makedirs(context['folder_out'])
+    
+    ext = src.split('.');
+    ext = ext[len(ext)-1]
+
+    ffargs = "ffmpeg -i " + src + " -vf scale=iw/2:ih/2 " + context["folder_out"] + "half." + ext 
+    print ffargs
+    run_background(ffargs)
+
+
+@app.task()
 def ddo(src, dest):
     try:
         encode_workflow(src, dest)
