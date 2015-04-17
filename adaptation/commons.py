@@ -24,9 +24,6 @@ from lxml import etree as LXML
 from context import get_transcoded_folder, get_transcoded_file, get_hls_transcoded_playlist, get_hls_transcoded_folder, \
     get_dash_folder, get_hls_folder, get_hls_global_playlist, get_dash_mpd_file_path
 
-#PIL
-from PIL import Image
-
 # main app for celery, configuration is in separate settings.ini file
 app = Celery('tasks')
 
@@ -66,34 +63,9 @@ def image_processing(src, dest):
     ext = src.split('.');
     ext = ext[len(ext)-1]
 
-    im = Image.open(src)
-    width = im.size[0]
-    extralarge = 1382
-    large = 992
-    medium = 768
-    small = 480
-
-    if width < extralarge:
-        extralarge = width
-    if width < large:
-        large = width
-    if width < medium:
-        medium = width
-    if width < small:
-        small = width
-
-    ffargsoriginal = "ffmpeg -i " + src + " -vf scale=" + str(width) +":-1 " + context["folder_out"] + "original.jpg"
-    ffargsextralarge = "ffmpeg -i " + src + " -vf scale=" + str(extralarge) +":-1 " + context["folder_out"] + "extralarge.jpg"
-    ffargslarge = "ffmpeg -i " + src + " -vf scale=" + str(large) + ":-1 " + context["folder_out"] + "large.jpg"
-    ffargsmedium = "ffmpeg -i " + src + " -vf scale=" + str(medium) + ":-1 " + context["folder_out"] + "medium.jpg"
-    ffargssmall = "ffmpeg -i " + src + " -vf scale=" + str(small) + ":-1 " + context["folder_out"] + "small.jpg"
-
-    run_background(ffargsoriginal)
-    run_background(ffargsextralarge)
-    run_background(ffargslarge)
-    run_background(ffargsmedium)
-    run_background(ffargssmall)
-
+    ffargs = "ffmpeg -i " + src + " -vf scale=iw/2:ih/2 " + context["folder_out"] + "half." + ext 
+    print ffargs
+    run_background(ffargs)
 
 
 @app.task()
