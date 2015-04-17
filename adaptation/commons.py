@@ -73,20 +73,25 @@ def image_processing(src, dest):
     medium = 768
     small = 480
 
-    if width < extralarge:
-        extralarge = width
-    if width < large:
-        large = width
-    if width < medium:
-        medium = width
-    if width < small:
-        small = width
-
     ffargsoriginal = "ffmpeg -i " + src + " -vf scale=" + str(width) +":-1 " + context["folder_out"] + "original.jpg"
-    ffargsextralarge = "ffmpeg -i " + src + " -vf scale=" + str(extralarge) +":-1 " + context["folder_out"] + "extralarge.jpg"
-    ffargslarge = "ffmpeg -i " + src + " -vf scale=" + str(large) + ":-1 " + context["folder_out"] + "large.jpg"
-    ffargsmedium = "ffmpeg -i " + src + " -vf scale=" + str(medium) + ":-1 " + context["folder_out"] + "medium.jpg"
-    ffargssmall = "ffmpeg -i " + src + " -vf scale=" + str(small) + ":-1 " + context["folder_out"] + "small.jpg"
+    
+    if width < extralarge:
+        ffargsextralarge = "ln -s " + context["folder_out"] + "original.jpg" + " " + context["folder_out"] + "extralarge.jpg"
+    else:
+        ffargsextralarge = "ffmpeg -i " + src + " -vf scale=" + str(extralarge) +":-1 " + context["folder_out"] + "extralarge.jpg"
+    if width < large:
+        ffargslarge = "ln -s " + context["folder_out"] + "original.jpg" + " " + context["folder_out"] + "large.jpg"
+    else:
+        ffargslarge = "ffmpeg -i " + src + " -vf scale=" + str(large) + ":-1 " + context["folder_out"] + "large.jpg"
+    if width < medium:
+        ffargsmedium = "ln -s " + context["folder_out"] + "original.jpg" + " " + context["folder_out"] + "medium.jpg"
+    else:
+        ffargsmedium = "ffmpeg -i " + src + " -vf scale=" + str(medium) + ":-1 " + context["folder_out"] + "medium.jpg"
+    if width < small:
+        ffargssmall = "ln -s " + context["folder_out"] + "original.jpg" + " " + context["folder_out"] + "small.jpg"
+    else:
+        ffargssmall = "ffmpeg -i " + src + " -vf scale=" + str(small) + ":-1 " + context["folder_out"] + "small.jpg"
+
 
     run_background(ffargsoriginal)
     run_background(ffargsextralarge)
