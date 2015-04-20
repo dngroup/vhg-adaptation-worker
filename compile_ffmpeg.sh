@@ -14,9 +14,12 @@ apt-get -y install autoconf automake build-essential libass-dev libfreetype6-dev
 mkdir ~/ffmpeg_sources
 
 cd $BUILD
-wget http://ffmpeg.org/releases/ffmpeg-snapshot.tar.bz2
-tar xjvf ffmpeg-snapshot.tar.bz2
-cd ffmpeg
+git clone  https://github.com/gpac/gpac --branch v0.5.2 --single-branch
+
+ git clone https://github.com/FFmpeg/FFmpeg.git --branch release/2.6 --single-branch
+cd FFmpeg 
+
+
 PKG_CONFIG_PATH="$PREFIX/lib/pkgconfig" 
 ./configure \
   --prefix="$PREFIX" \
