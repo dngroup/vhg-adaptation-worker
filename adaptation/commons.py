@@ -24,8 +24,6 @@ from lxml import etree as LXML
 from context import get_transcoded_folder, get_transcoded_file, get_hls_transcoded_playlist, get_hls_transcoded_folder, \
     get_dash_folder, get_hls_folder, get_hls_global_playlist, get_dash_mpd_file_path
 
-#PIL
-from PIL import Image
 
 # main app for celery, configuration is in separate settings.ini file
 app = Celery('tasks')
@@ -66,8 +64,12 @@ def image_processing(src, dest):
     ext = src.split('.');
     ext = ext[len(ext)-1]
 
-    im = Image.open(src)
-    width = im.size[0]
+    media_info = MediaInfo.parse(context["original_file"])
+
+    for track in media_info.tracks:
+	width = track.width
+	print width
+
     extralarge = 1382
     large = 992
     medium = 768
@@ -331,3 +333,4 @@ def clean_encoding_folder(*args, **kwargs):
     # print args, kwargs
     context = args[0]
     shutil.rmtree(get_transcoded_folder(context))
+
