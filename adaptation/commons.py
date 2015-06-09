@@ -24,6 +24,7 @@ from lxml import etree as LXML
 from context import get_transcoded_folder, get_transcoded_file, get_hls_transcoded_playlist, get_hls_transcoded_folder, \
     get_dash_folder, get_hls_folder, get_hls_global_playlist, get_dash_mpd_file_path
 
+
 # main app for celery, configuration is in separate settings.ini file
 app = Celery('tasks')
 
@@ -63,9 +64,43 @@ def image_processing(src, dest):
     ext = src.split('.');
     ext = ext[len(ext)-1]
 
-    ffargs = "ffmpeg -i " + src + " -vf scale=iw/2:ih/2 " + context["folder_out"] + "half." + ext 
-    print ffargs
-    run_background(ffargs)
+    media_info = MediaInfo.parse(context["original_file"])
+
+    for track in media_info.tracks:
+	width = track.width
+	print width
+
+    extralarge = 1382
+    large = 992
+    medium = 768
+    small = 480
+
+    ffargsoriginal = "ffmpeg -i " + src + " -vf scale=" + str(width) +":-1 " + context["folder_out"] + "original.jpg"
+    
+    if width < extralarge:
+        ffargsextralarge = "ln -s " + context["folder_out"] + "original.jpg" + " " + context["folder_out"] + "extralarge.jpg"
+    else:
+        ffargsextralarge = "ffmpeg -i " + src + " -vf scale=" + str(extralarge) +":-1 " + context["folder_out"] + "extralarge.jpg"
+    if width < large:
+        ffargslarge = "ln -s " + context["folder_out"] + "original.jpg" + " " + context["folder_out"] + "large.jpg"
+    else:
+        ffargslarge = "ffmpeg -i " + src + " -vf scale=" + str(large) + ":-1 " + context["folder_out"] + "large.jpg"
+    if width < medium:
+        ffargsmedium = "ln -s " + context["folder_out"] + "original.jpg" + " " + context["folder_out"] + "medium.jpg"
+    else:
+        ffargsmedium = "ffmpeg -i " + src + " -vf scale=" + str(medium) + ":-1 " + context["folder_out"] + "medium.jpg"
+    if width < small:
+        ffargssmall = "ln -s " + context["folder_out"] + "original.jpg" + " " + context["folder_out"] + "small.jpg"
+    else:
+        ffargssmall = "ffmpeg -i " + src + " -vf scale=" + str(small) + ":-1 " + context["folder_out"] + "small.jpg"
+
+
+    run_background(ffargsoriginal)
+    run_background(ffargsextralarge)
+    run_background(ffargslarge)
+    run_background(ffargsmedium)
+    run_background(ffargssmall)
+
 
 
 @app.task()
