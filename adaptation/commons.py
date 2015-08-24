@@ -239,7 +239,7 @@ def chunk_dash(*args, **kwargs):
     if not os.path.exists(get_dash_folder(context)):
         os.makedirs(get_dash_folder(context))
 
-    args = "MP4Box -dash " + str(segtime) + "000 -profile onDemand "
+    args = "MP4Box -dash " + str(segtime) + "000 -profile live "
     files_in = [os.path.join(get_transcoded_folder(context), f) for f in os.listdir(get_transcoded_folder(context))]
     for i in range(0, len(files_in)):
         args += files_in[i] + "#video:id=v" + str(i) + " "
