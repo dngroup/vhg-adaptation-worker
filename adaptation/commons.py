@@ -132,7 +132,7 @@ def encode_workflow(self, src, dest):
 
     context = add_playlist_footer(context)
     context = chunk_dash(context, segtime=4) #Warning : segtime is already set in transcode.s(), but not in the same context
-    context = edit_dash_playlist(context)
+    #context = edit_dash_playlist(context)
     #notify.s(complete=True, main_task_id=main_task_id))
     clean_encoding_folder(context)
 
