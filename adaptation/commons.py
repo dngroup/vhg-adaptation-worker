@@ -7,29 +7,17 @@ import shutil
 import json
 import copy
 import mimetypes
-
 import pika
 import swiftclient
 from celery.utils.log import get_task_logger
-
-
-
-
-
-
-
 # config import
 from .settings import *
-
 # celery import
 from celery import Celery
-
 # media info wrapper import
 from pymediainfo import MediaInfo
-
 # lxml import to edit dash playlist
 from lxml import etree as LXML
-
 # context helpers
 from .context import get_transcoded_folder, get_transcoded_file, get_hls_transcoded_playlist, get_hls_transcoded_folder, \
     get_dash_folder, get_hls_folder, get_hls_global_playlist, get_dash_mpd_file_path
@@ -78,10 +66,40 @@ def run_background(*args):
     except subprocess.CalledProcessError:
         print("Error")
 
+
+# @app.task(bind=True)
+# def publish_output(*args, **kwargs):
+#     self = args[0]
+#     context = args[1]
+#     output_folder = context["folder_out"]
+#     if swift_connection is None:
+#         logger.warn("swift connection is not active, skipping streamer upload")
+#
+#     else:
+#         headers = {}
+#         container = os.path.basename(output_folder)
+#         headers["X-Container-Read"] = " .r:*"
+#         headers["X-Container-Meta-Access-Control-Allow-Origin"] = "*"
+#         headers["X-Container-Meta-Access-Control-Allow-Method"] = "GET"
+#
+#         swift_connection.put_container(container, headers)
+#         for object in os.walk(output_folder):
+#             paths = object[2]
+#             root = object[0]
+#             for path in paths:
+#                 filepath = os.path.abspath(os.path.join(root, path))
+#                 with open(filepath) as f:
+#                     content_type, encoding = mimetypes.guess_type(filepath)
+#                     swift_connection.put_object(container, os.path.join(root, path)[len(output_folder) + 1:], f,
+#                                                 content_type=content_type)
+#
+#     return context
+
 @app.task(bind=True)
 def publish_output(*args, **kwargs):
     self = args[0]
     context = args[1]
+    name = context["name"]
     output_folder = context["folder_out"]
     if swift_connection is None:
         logger.warn("swift connection is not active, skipping streamer upload")
@@ -90,18 +108,21 @@ def publish_output(*args, **kwargs):
         headers = {}
         container = os.path.basename(output_folder)
         headers["X-Container-Read"] = " .r:*"
-        headers["X-Container-Meta-Access-Control-Allow-Origin"]="*"
-        headers["X-Container-Meta-Access-Control-Allow-Method"]="GET"
+        headers["X-Container-Meta-Access-Control-Allow-Origin"] = "*"
+        headers["X-Container-Meta-Access-Control-Allow-Method"] = "GET"
 
         swift_connection.put_container(container, headers)
-        for object in os.walk(output_folder):
-            paths = object[2]
-            root = object[0]
-            for path in paths:
-                filepath = os.path.abspath(os.path.join(root, path))
-                with open(filepath) as f:
-                    content_type, encoding = mimetypes.guess_type(filepath)
-                    swift_connection.put_object(container, os.path.join(root, path)[len(output_folder)+1:], f, content_type=content_type)
+        # for object in os.walk(output_folder):
+        encoding_folder = get_transcoded_folder(context)
+        # paths = object[2]
+        root =encoding_folder
+        # for path in paths:
+        path = name + ".mp4"
+        filepath = os.path.abspath(os.path.join(root, path))
+        with open(filepath) as f:
+            content_type, encoding = mimetypes.guess_type(filepath)
+            swift_connection.put_object(container, os.path.join(root, path)[len(output_folder) + 1:], f,
+                                        content_type=content_type)
 
     return context
 
@@ -159,6 +180,7 @@ def encode_workflow(self, url):
         context_loop["name"] = name
         context_loop = compute_target_size(context_loop, target_height=target_height)
         context_loop = transcode(context_loop, bitrate=bitrate, segtime=4, name=name)
+        context_loop = publish_output(context_loop)
         context_loop = notify(context_loop, main_task_id=main_task_id, quality=name)
         context_loop = chunk_hls(context_loop, segtime=4)
         context_loop = add_playlist_info(context_loop)
@@ -166,8 +188,8 @@ def encode_workflow(self, url):
     context = add_playlist_footer(context)
     context = chunk_dash(context, segtime=4, )
     context = edit_dash_playlist(context)
-    context = publish_output(context)
-    context = notify(context, complete=True, main_task_id=main_task_id)
+
+   # context = notify(context, complete=True, main_task_id=main_task_id)
 
 
 @app.task()
@@ -177,10 +199,10 @@ def download_file(*args, **kwargs):
     folder_in = context["folder_in"]
     print(("downloading %s", context["url"]))
     context["original_file"] = os.path.join(folder_in, context["id"])
-    print(("downloading in %s", context["original_file"] ))
+    print(("downloading in %s", context["original_file"]))
     opener = urllib.URLopener()
     opener.retrieve(context["url"], context["original_file"])
-    print(("downloaded in %s", context["original_file"] ))
+    print(("downloaded in %s", context["original_file"]))
     return context
 
 
@@ -255,7 +277,7 @@ def transcode(*args, **kwargs):
 
     command_line = "ffmpeg -i " + context[
         "original_file"] + " -c:v libx264 -profile:v main -level 3.1 -b:v " + str(context[
-        "bitrate"]) + "k -vf scale=" + dimsp + " -c:a aac -strict -2 -force_key_frames expr:gte\(t,n_forced*" + str(
+                                                                                      "bitrate"]) + "k -vf scale=" + dimsp + " -c:a aac -strict -2 -force_key_frames expr:gte\(t,n_forced*" + str(
         context["segtime"]) + "\) " + get_transcoded_file(
         context)
     print(("transcoding commandline %s" % command_line))
