@@ -1,5 +1,7 @@
 import urllib
 
+
+
 __author__ = 'nherbaut'
 import subprocess
 import math
@@ -9,6 +11,7 @@ import copy
 import mimetypes
 import pika
 import swiftclient
+import time
 from celery.utils.log import get_task_logger
 # config import
 from .settings import *
@@ -21,6 +24,8 @@ from lxml import etree as LXML
 # context helpers
 from .context import get_transcoded_folder, get_transcoded_file, get_hls_transcoded_playlist, get_hls_transcoded_folder, \
     get_dash_folder, get_hls_folder, get_hls_global_playlist, get_dash_mpd_file_path
+#Encoding profil
+from adaptation.EncodingProfil import EncodingProfile
 
 # main app for celery, configuration is in separate settings.ini file
 app = Celery('tasks')
@@ -67,6 +72,8 @@ def run_background(*args):
         print("Error")
 
 
+# commented since publication occurs atomically before notification of a new video format.
+# this one use to push everything from the output folder
 # @app.task(bind=True)
 # def publish_output(*args, **kwargs):
 #     self = args[0]
@@ -162,32 +169,89 @@ def deploy_original_file(*args, **kwargs):
 
 @app.task()
 def ddo(url):
-    encode_workflow.delay(url)
+    encode_workflow.delay(url=url)
 
+
+#docker run -ite FRONTAL_HOSTNAME="192.168.236.81" -e FRONTAL_PORT="8080" -p 8080:8080 nherbaut/adapted-video-osgi-bundle
+#Exchange	(AMQP default)
+#Routing Key	celery
+#Properties
+#priority:	0
+#delivery_mode:	2
+#headers:
+#content_encoding:	utf-8
+#content_type:	application/json
+#Payload
+#213 bytes
+#Encoding: string
+#{"id": "20e56aa73ca741a29bb24fb02072a1b2", "task": "adaptation.commons.encode_workflow", "args": ["http://clips.vorwaerts-gmbh.de/big_buck_bunny.mp4?13"], "kwargs": {}, "retries": 0, "eta": "2015-11-26T09:23:33Z"}
+#
+# {
+#   "id": "20e56aa73ca741a29bb24fb02072a1b2",
+#   "task": "adaptation.commons.encode_workflow",
+#   "args": [
+#     "http://clips.vorwaerts-gmbh.de/big_buck_bunny.mp4?13"
+#   ],
+#   "kwargs": {
+#     "url": "http://clips.vorwaerts-gmbh.de/big_buck_bunny.mp4?13",
+#     "qualities": {
+#       "quality": {
+#         "name": "lowx264",
+#         "bitrate": 500,
+#         "codec": "libx264",
+#         "height": 320
+#       },
+#       "lowx265": {
+#         "name": "lowx265",
+#         "bitrate": 500,
+#         "codec": "libx265",
+#         "height": 320}
+#     }
+#   },
+#   "retries": 0,
+#   "eta": "2015-11-26T09:23:33Z"
+# }
 
 @app.task(bind=True)
-def encode_workflow(self, url):
+def encode_workflow(*args, **kwargs):
+    self = args[0]
     main_task_id = self.request.id
+    url=kwargs["url"]
+    qualities=kwargs["qualities"]
+    encodingprofils=[];
+    for quality in qualities["quality"] :
+        print(quality)
+        profil = EncodingProfile(quality)
+        encodingprofils.insert(0,profil)
+
+   # encodingprofils = [EncodingProfile('lowx264',500,"libx264",320),EncodingProfile('lowx265',250,"libx265",320)]
+
+
     print("(------------")
 
     context = download_file(
         context={"url": url, "folder_out": os.path.join(config["folder_out"], main_task_id), "id": main_task_id,
                  "folder_in": config["folder_in"]})
     context = get_video_size(context)
-    context = add_playlist_header(context)
-    for target_height, bitrate, name in config["bitrates_size_tuple_list"]:
-        context_loop = copy.deepcopy(context)
-        context_loop["name"] = name
-        context_loop = compute_target_size(context_loop, target_height=target_height)
-        context_loop = transcode(context_loop, bitrate=bitrate, segtime=4, name=name)
-        context_loop = publish_output(context_loop)
-        context_loop = notify(context_loop, main_task_id=main_task_id, quality=name)
-        context_loop = chunk_hls(context_loop, segtime=4)
-        context_loop = add_playlist_info(context_loop)
+    #context = add_playlist_header(context)
 
-    context = add_playlist_footer(context)
-    context = chunk_dash(context, segtime=4, )
-    context = edit_dash_playlist(context)
+    for encodingprofil in encodingprofils :
+        print(encodingprofil.name)
+
+
+  #  for target_height, bitrate, name in config["bitrates_size_tuple_list"]:
+        context_loop = copy.deepcopy(context)
+        context_loop["name"] = encodingprofil.name
+        context_loop = compute_target_size(context_loop, target_height=encodingprofil.target_height)
+        context_loop = transcode(context_loop, bitrate=encodingprofil.bitrate, segtime=4, name=encodingprofil.name, codec=encodingprofil.codec)
+        context_loop = publish_output(context_loop)
+        context_loop = notify(context_loop, main_task_id=main_task_id, quality=encodingprofil.name)
+        #context_loop = chunk_hls(context_loop, segtime=4)
+        #context_loop = add_playlist_info(context_loop)
+
+   # context = add_playlist_footer(context)
+   # context = chunk_dash(context, segtime=4, )
+   # context = edit_dash_playlist(context)
 
    # context = notify(context, complete=True, main_task_id=main_task_id)
 
@@ -268,21 +332,24 @@ def transcode(*args, **kwargs):
     context = args[0]
     context["bitrate"] = kwargs['bitrate']
     context["segtime"] = kwargs['segtime']
+    context["codec"] = kwargs['codec']
     dimsp = str(context["target_width"]) + ":" + str(context["target_height"])
     if not os.path.exists(get_transcoded_folder(context)):
         try:
             os.makedirs(get_transcoded_folder(context))
         except OSError as e:
             pass
-
+#ffmpeg -i " FILE " -c:v libx264 -profile:v main -level 3.1 -b:v "BITRATE"k -vf scale=640:480 -c:a aac -strict -2 -force_key_frames expr:gte\(t,n_forced*4\) OUPUT.mp4
     command_line = "ffmpeg -i " + context[
-        "original_file"] + " -c:v libx264 -profile:v main -level 3.1 -b:v " + str(context[
-                                                                                      "bitrate"]) + "k -vf scale=" + dimsp + " -c:a aac -strict -2 -force_key_frames expr:gte\(t,n_forced*" + str(
+        "original_file"] + " -c:v "+context["codec"]+" -b:v " + str(context["bitrate"]) + "k -vf scale=" + dimsp + " -c:a aac -strict -2 -force_key_frames expr:gte\(t,n_forced*" + str(
         context["segtime"]) + "\) " + get_transcoded_file(
         context)
     print(("transcoding commandline %s" % command_line))
+    start =time.time();
     subprocess.call(command_line,
                     shell=True)
+    elpased = time.time()-start
+    print("time to encode the video: "+ str(elpased) +"s")
     return context
 
 
