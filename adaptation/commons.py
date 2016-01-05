@@ -1,8 +1,6 @@
+__author__ = 'nherbaut dbourasseau'
+
 import urllib
-
-
-
-__author__ = 'nherbaut'
 import subprocess
 import math
 import shutil
@@ -12,7 +10,9 @@ import mimetypes
 import pika
 import swiftclient
 import time
+import tempfile
 from celery.utils.log import get_task_logger
+from lxml import etree
 # config import
 from .settings import *
 # celery import
@@ -21,10 +21,12 @@ from celery import Celery
 from pymediainfo import MediaInfo
 # lxml import to edit dash playlist
 from lxml import etree as LXML
+# use to get home directory
+from os.path import expanduser
 # context helpers
 from .context import get_transcoded_folder, get_transcoded_file, get_hls_transcoded_playlist, get_hls_transcoded_folder, \
     get_dash_folder, get_hls_folder, get_hls_global_playlist, get_dash_mpd_file_path
-#Encoding profil
+# Encoding profil
 from adaptation.EncodingProfil import EncodingProfile
 
 # main app for celery, configuration is in separate settings.ini file
@@ -122,9 +124,10 @@ def publish_output(*args, **kwargs):
         # for object in os.walk(output_folder):
         encoding_folder = get_transcoded_folder(context)
         # paths = object[2]
-        root =encoding_folder
+        root = encoding_folder
+
+        path = name  # + ".mp4"
         # for path in paths:
-        path = name + ".mp4"
         filepath = os.path.abspath(os.path.join(root, path))
         with open(filepath) as f:
             content_type, encoding = mimetypes.guess_type(filepath)
@@ -172,88 +175,269 @@ def ddo(url):
     encode_workflow.delay(url=url)
 
 
-#docker run -ite FRONTAL_HOSTNAME="192.168.236.81" -e FRONTAL_PORT="8080" -p 8080:8080 nherbaut/adapted-video-osgi-bundle
-#Exchange	(AMQP default)
-#Routing Key	celery
-#Properties
-#priority:	0
-#delivery_mode:	2
-#headers:
-#content_encoding:	utf-8
-#content_type:	application/json
-#Payload
-#213 bytes
-#Encoding: string
-#{"id": "20e56aa73ca741a29bb24fb02072a1b2", "task": "adaptation.commons.encode_workflow", "args": ["http://clips.vorwaerts-gmbh.de/big_buck_bunny.mp4?13"], "kwargs": {}, "retries": 0, "eta": "2015-11-26T09:23:33Z"}
-#
+# docker run -ite FRONTAL_HOSTNAME="192.168.236.81" -e FRONTAL_PORT="8080" -p 8080:8080 nherbaut/adapted-video-osgi-bundle
+# Exchange	(AMQP default)
+# Routing Key	celery
+# Properties
+# priority:	0
+# delivery_mode:	2
+# headers:
+# content_encoding:	utf-8
+# content_type:	application/json
+# Payload
+# 213 bytes
+# Encoding: string
+# {"id": "20e56aa73ca741a29bb24fb02072a1b2", "task": "adaptation.commons.encode_workflow", "args": ["http://clips.vorwaerts-gmbh.de/big_buck_bunny.mp4?13"], "kwargs": {}, "retries": 0, "eta": "2015-11-26T09:23:33Z"}
 # {
-#   "id": "20e56aa73ca741a29bb24fb02072a1b2",
-#   "task": "adaptation.commons.encode_workflow",
-#   "args": [
-#     "http://clips.vorwaerts-gmbh.de/big_buck_bunny.mp4?13"
-#   ],
-#   "kwargs": {
-#     "url": "http://clips.vorwaerts-gmbh.de/big_buck_bunny.mp4?13",
-#     "qualities": {
-#       "quality": {
-#         "name": "lowx264",
-#         "bitrate": 500,
-#         "codec": "libx264",
-#         "height": 320
-#       },
-#       "lowx265": {
-#         "name": "lowx265",
-#         "bitrate": 500,
-#         "codec": "libx265",
-#         "height": 320}
-#     }
-#   },
-#   "retries": 0,
-#   "eta": "2015-11-26T09:23:33Z"
+#    "id":"20e56aa73ca741a29bb24fb02072a1b2",
+#    "task":"adaptation.commons.encode_workflow",
+#    "args":[
+#
+#    ],
+#    "kwargs":{
+#       "url":"http://clips.vorwaerts-gmbh.de/big_buck_bunny.mp4?13",
+#       "qualities":{
+#          "quality":[
+#             {
+#                "name":"lowx264",
+#                "bitrate":500,
+#                "codec":"libx264",
+#                "height":320
+#             },
+#             {
+#                "name":"lowx265",
+#                "bitrate":250,
+#                "codec":"libx265",
+#                "height":320
+#             }
+#          ]
+#       }
+#    },
+#    "retries":1,
+#    "eta":"2015-12-09T07:54:42+01:00"
 # }
 
 @app.task(bind=True)
 def encode_workflow(*args, **kwargs):
     self = args[0]
     main_task_id = self.request.id
-    url=kwargs["url"]
-    qualities=kwargs["qualities"]
-    encodingprofils=[];
-    for quality in qualities["quality"] :
+    url = kwargs["url"]
+    qualities = kwargs["qualities"]
+    encodingprofils = [];
+    for quality in qualities["quality"]:
         print(quality)
         profil = EncodingProfile(quality)
-        encodingprofils.insert(0,profil)
+        encodingprofils.insert(0, profil)
 
-   # encodingprofils = [EncodingProfile('lowx264',500,"libx264",320),EncodingProfile('lowx265',250,"libx265",320)]
-
+        # encodingprofils = [EncodingProfile('lowx264',500,"libx264",320),EncodingProfile('lowx265',250,"libx265",320)]
 
     print("(------------")
 
     context = download_file(
         context={"url": url, "folder_out": os.path.join(config["folder_out"], main_task_id), "id": main_task_id,
                  "folder_in": config["folder_in"]})
+    context_original = copy.deepcopy(context)
+    context_original["name"] = "original"
+    context_original["folder_out"] = context["original_file"]
+    publish_output(context_original)
     context = get_video_size(context)
-    #context = add_playlist_header(context)
+    # context = add_playlist_header(context)
 
-    for encodingprofil in encodingprofils :
+    for encodingprofil in encodingprofils:
         print(encodingprofil.name)
 
-
-  #  for target_height, bitrate, name in config["bitrates_size_tuple_list"]:
+        #  for target_height, bitrate, name in config["bitrates_size_tuple_list"]:
         context_loop = copy.deepcopy(context)
         context_loop["name"] = encodingprofil.name
         context_loop = compute_target_size(context_loop, target_height=encodingprofil.target_height)
-        context_loop = transcode(context_loop, bitrate=encodingprofil.bitrate, segtime=4, name=encodingprofil.name, codec=encodingprofil.codec)
+        context_loop = transcode(context_loop, bitrate=encodingprofil.bitrate, segtime=4, name=encodingprofil.name,
+                                 codec=encodingprofil.codec)
         context_loop = publish_output(context_loop)
         context_loop = notify(context_loop, main_task_id=main_task_id, quality=encodingprofil.name)
-        #context_loop = chunk_hls(context_loop, segtime=4)
-        #context_loop = add_playlist_info(context_loop)
+        # context_loop = chunk_hls(context_loop, segtime=4)
+        # context_loop = add_playlist_info(context_loop)
 
-   # context = add_playlist_footer(context)
-   # context = chunk_dash(context, segtime=4, )
-   # context = edit_dash_playlist(context)
+        # context = add_playlist_footer(context)
+        # context = chunk_dash(context, segtime=4, )
+        # context = edit_dash_playlist(context)
 
-   # context = notify(context, complete=True, main_task_id=main_task_id)
+        # context = notify(context, complete=True, main_task_id=main_task_id)
+
+
+@app.task
+def send_file_SSH(*args, **kwargs):
+    context = kwargs["context"]
+
+    file = kwargs["file"]
+    path = kwargs["path"]
+    serverVTU = os.environ.get("SERVER_VTU", SERVER_VTU)
+    sshPortVTU = os.environ.get("SSH_PORT_VTU", SSH_PORT_VTU)
+    sshkey = os.environ.get("SSH_KEY", "sshkey")
+
+    command_line = 'scp -P ' + sshPortVTU + " -i " + sshkey + "  -o \"StrictHostKeyChecking no\" " + file + ' herbaut@' + serverVTU + ':' + path
+    print("send file over ssh ", command_line)
+    resp = subprocess.call(command_line, shell=True)
+    if (resp == 0):
+        print("Success send file")
+    else:
+        print("Fail send file")
+    return context
+
+
+@app.task()
+def createXML(*args, **kwargs):
+    encodingprofils = kwargs["encodingprofils"]
+    context = kwargs["context"]
+
+    # Create the root element
+    page = etree.Element('vTU')
+
+    # Make a new document tree
+    doc = etree.ElementTree(page)
+
+    # Add the subelements
+    inxml = etree.SubElement(page, 'in')
+    local = etree.SubElement(inxml, 'local')
+    stream = etree.SubElement(local, 'stream')
+    stream.text = context["id"]
+
+    # TODO: NEED LIST
+    for encodingprofil in encodingprofils:
+        print(encodingprofil.name)
+        #    context_loop = copy.deepcopy(context)
+        #    context_loop["name"] = encodingprofil.name
+        #    context_loop = compute_target_size(context_loop, target_height=encodingprofil.target_height)
+
+
+        outxml = etree.SubElement(page, 'out')
+
+        context_loop = copy.deepcopy(context)
+        context_loop = compute_target_size(context_loop, target_height=encodingprofil.target_height)
+
+        outlocal = etree.SubElement(outxml, 'local')
+        overwrite = etree.SubElement(outlocal, 'overwrite')
+        overwrite.text = "y"
+        outstream = etree.SubElement(outlocal, 'stream')
+        outstream.text = context["id"] + encodingprofil.name + ".mp4"
+        codec = etree.SubElement(outxml, 'codec')
+        vcodec = etree.SubElement(codec, 'vcodec')
+        vcodec.text = encodingprofil.codec
+        acodec = etree.SubElement(codec, 'acodec')
+        acodec.text = "aac"
+        vbitrate = etree.SubElement(codec, 'vbitrate')
+        vbitrate.text = str(encodingprofil.bitrate)
+        abitrate = etree.SubElement(codec, 'abitrate')
+        abitrate.text = "128k"
+        vsizewidth = etree.SubElement(codec, 'vsizewidth')
+        vsizewidth.text = str(context_loop["target_width"])
+        vsizeheight = etree.SubElement(codec, 'vsizeheight')
+        vsizeheight.text = str(context_loop["target_height"])
+
+    # <vsize></vsize>
+    #   <vframerate></vframerate>
+    #   <asamplerate></asamplerate>
+    #   <achannels></achannels>
+
+    # For multiple multiple attributes, use as shown above
+
+    # Save to XML file
+    home = expanduser("~")
+    try:
+        os.makedirs(home + "/worker/")
+        # os.makedirs("/usr/share/nginx/html/vTU/output/" + time.strftime("%Y.%m.%d"))
+    except OSError as e:
+        print("folder already exist")
+        pass
+    outFile = open(home + "/worker/" + context["id"] + '.xml', 'w')
+    doc.write(outFile, xml_declaration=True, encoding='utf-8', pretty_print = True)
+    context["xml_file"] = home + "/worker/" + context["id"] + '.xml'
+    return context
+
+
+#
+# {
+#    "id":"20e56aa73ca741a29bb24fb02072a1b2",
+#    "task":"adaptation.commons.encode_workflow_hard",
+#    "args":[
+#
+#    ],
+#    "kwargs":{
+#       "url":"http://clips.vorwaerts-gmbh.de/big_buck_bunny.mp4?13",
+#       "qualities":{
+#          "quality":[
+#             {
+#                "name":"lowx264",
+#                "bitrate":500,
+#                "codec":"h264-gpu",
+#                "height":320
+#             },
+#             {
+#                "name":"lowx265",
+#                "bitrate":250,
+#                "codec":"h265-gpu",
+#                "height":320
+#             }
+#          ]
+#       }
+#    },
+#    "retries":1,
+#    "eta":"2015-12-09T07:54:42+01:00"
+# }
+@app.task(bind=True)
+def encode_workflow_hard(*args, **kwargs):
+    self = args[0]
+    main_task_id = self.request.id
+    url = kwargs["url"]
+    qualities = kwargs["qualities"]
+    serverVTU = os.environ.get("SERVER_VTU", SERVER_VTU)
+    # sshPortVTU = os.environ.get("SSH_PORT_VTU", SSH_PORT_VTU)
+    httpPortVTU = os.environ.get("HTTP_PORT_VTU", HTTP_PORT_VTU)
+
+    encodingprofils = [];
+    for quality in qualities["quality"]:
+        print(quality)
+        profil = EncodingProfile(quality)
+        encodingprofils.insert(0, profil)
+
+    print("------------")
+
+    context = download_file(
+        context={"url": url, "folder_out": os.path.join(config["folder_out"], main_task_id), "id": main_task_id,
+                 "folder_in": config["folder_in"]})
+    context_original = copy.deepcopy(context)
+    context_original["name"] = "original"
+    context_original["folder_out"] = context["original_file"]
+    publish_output(context_original)
+
+    context = get_video_size(context)
+    # context = add_playlist_header(context)
+    context = send_file_SSH(context=context, path="/vTU/vTU/input/", file=context["original_file"])
+    context = createXML(encodingprofils=encodingprofils, context=context)
+    context = send_file_SSH(context=context, path="/vTU/vTU/spool/", file=context["xml_file"])
+
+    try:
+        os.makedirs(context['folder_out'])
+    except:
+        pass
+    for encodingprofil in encodingprofils:
+        print(encodingprofil.name)
+        context_loop = copy.deepcopy(context)
+        context_loop["name"] = encodingprofil.name
+        context_loop["folder_in"] = context_loop["folder_out"]
+        # context_loop["id"]=context["id"]+context_loop["name"]
+
+
+        context_loop["url"] = "http://" + serverVTU + ":" + httpPortVTU + "/vTU/output/" + time.strftime(
+            "%Y.%m.%d") + "/" + context_loop[
+                                  "id"] + context_loop["name"]+ ".mp4"
+        context_loop["id"] = context["id"] + context_loop["name"]
+        context_loop = download_file(context=context_loop, retry=True)
+        context_loop["folder_out"] = context["original_file"]
+
+        context_loop = publish_output(context_loop)
+        context_loop = notify(context_loop, main_task_id=main_task_id, quality=encodingprofil.name)
+        # context_loop = chunk_hls(context_loop, segtime=4)
+        # context_loop = add_playlist_info(context_loop)
 
 
 @app.task()
@@ -262,13 +446,59 @@ def download_file(*args, **kwargs):
     context = kwargs["context"]
     folder_in = context["folder_in"]
     print(("downloading %s", context["url"]))
+    # split =context["url"].split("/")
+    # filname=split[len(split)-1]
+    # context["original_folder"] = os.path.join(folder_in, context["id"])
+    # os.mkdir(context["original_folder"])
     context["original_file"] = os.path.join(folder_in, context["id"])
+
     print(("downloading in %s", context["original_file"]))
     opener = urllib.URLopener()
-    opener.retrieve(context["url"], context["original_file"])
-    print(("downloaded in %s", context["original_file"]))
+    retry = True
+    while retry:
+        try:
+            opener.retrieve(context["url"], context["original_file"])
+            print(("downloaded in %s", context["original_file"]))
+            break
+        except IOError as e:
+
+            if (e.args[1] == 404):
+                try:
+                    retry = kwargs["retry"]
+
+                except KeyError as d:
+                    retry = False
+                    raise e
+
+                print str(e.args[1]) + " retry download"
+            else:
+                raise e
+            time.sleep(0.2)
+
     return context
 
+
+# @app.task()
+# def download_file2(*args, **kwargs):
+#     print((args, kwargs))
+#     context = kwargs["context"]
+#     folder_in = context["folder_in"]
+#     print(("downloading %s", context["url"]))
+#     # split =context["url"].split("/")
+#     # filname=split[len(split)-1]
+#     # context["original_folder"] = os.path.join(folder_in, context["id"])
+#     # os.mkdir(context["original_folder"])
+#     context["original_file"] = os.path.join(folder_in, context["id"])
+#     print(("downloading in %s", context["original_file"]))
+#     # opener = urllib.URLopener()
+#     a=urllib.urlopen(context["url"])
+#     while ( a.getcode()==404):
+#         print "404"
+#         time.sleep(0.2)
+#     a.ge
+#     opener.retrieve(context["url"], context["original_file"])
+#     print(("downloaded in %s", context["original_file"]))
+#     return context
 
 @app.task
 # def get_video_size(input_file):
@@ -339,17 +569,18 @@ def transcode(*args, **kwargs):
             os.makedirs(get_transcoded_folder(context))
         except OSError as e:
             pass
-#ffmpeg -i " FILE " -c:v libx264 -profile:v main -level 3.1 -b:v "BITRATE"k -vf scale=640:480 -c:a aac -strict -2 -force_key_frames expr:gte\(t,n_forced*4\) OUPUT.mp4
+            # ffmpeg -i " FILE " -c:v libx264 -profile:v main -level 3.1 -b:v "BITRATE"k -vf scale=640:480 -c:a aac -strict -2 -force_key_frames expr:gte\(t,n_forced*4\) OUPUT.mp4
     command_line = "ffmpeg -i " + context[
-        "original_file"] + " -c:v "+context["codec"]+" -b:v " + str(context["bitrate"]) + "k -vf scale=" + dimsp + " -c:a aac -strict -2 -force_key_frames expr:gte\(t,n_forced*" + str(
+        "original_file"] + " -c:v " + context["codec"] + " -b:v " + str(context[
+                                                                            "bitrate"]) + "k -vf scale=" + dimsp + " -c:a aac -strict -2 -force_key_frames expr:gte\(t,n_forced*" + str(
         context["segtime"]) + "\) " + get_transcoded_file(
         context)
     print(("transcoding commandline %s" % command_line))
-    start =time.time();
+    start = time.time();
     subprocess.call(command_line,
                     shell=True)
-    elpased = time.time()-start
-    print("time to encode the video: "+ str(elpased) +"s")
+    elpased = time.time() - start
+    print("time to encode the video: " + str(elpased) + "s")
     return context
 
 

@@ -59,6 +59,19 @@ if your worker is called worker 1, logs are located in
 
     /var/log/celery/worker1.log
 
+## Docker
+
+this version use environment variable
+
+```
+PYTHONUNBUFFERED=1
+SERVER_VTU=138.132.104.86 (default variable)
+HTTP_PORT_VTU=80 (default variable)
+CELERY_BROKER_URL=amqp://guest@localhost/
+SSH_PORT_VTU=22 (default variable)
+SSH_KEY=sshkey (default variable) ( /home/user/sshkey)
+```
+
 ## Running tasks ##
 
 The project is composed from various celery tasks in the adaptation python package. One should only call high level task encoding_workflow in the commons.py module.

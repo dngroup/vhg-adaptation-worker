@@ -1,0 +1,36 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<vTU>
+  <in>
+    <local>
+      <stream>20e56aa73ca741a29bb24fb02ffffda</stream>
+    </local>
+  </in>
+  <out>
+    <local>
+      <overwrite>y</overwrite>
+      <stream>20e56aa73ca741a29bb24fb02ffffdalow2x264.mp4</stream>
+    </local>
+    <codec>
+      <vcodec>h264-gpu</vcodec>
+      <acodec>aac</acodec>
+      <vbitrate>250</vbitrate>
+      <abitrate>128k</abitrate>
+      <vsizewidth>720</vsizewidth>
+      <vsizeheight>576</vsizeheight>
+    </codec>
+  </out>
+  <out>
+    <local>
+      <overwrite>y</overwrite>
+      <stream>20e56aa73ca741a29bb24fb02ffffdalowx264.mp4</stream>
+    </local>
+    <codec>
+      <vcodec>h264-gpu</vcodec>
+      <acodec>aac</acodec>
+      <vbitrate>500</vbitrate>
+      <abitrate>128k</abitrate>
+      <vsizewidth>640</vsizewidth>
+      <vsizeheight>480</vsizeheight>
+    </codec>
+  </out>
+</vTU>

@@ -7,3 +7,6 @@ config = {"folder_out": "/var/www/out",
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_ACCEPT_CONTENT = ['json']
+SERVER_VTU = '138.132.104.86'
+SSH_PORT_VTU = '22'
+HTTP_PORT_VTU = '80'
