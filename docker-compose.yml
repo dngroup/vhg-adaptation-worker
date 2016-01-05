@@ -1,0 +1,12 @@
+vhg-adaptation-worker:
+  image: docker.io/dngroup/vhg-adaptation-worker:t-nova
+
+  volumes:
+   - .:/KEY
+  environment:
+  - PYTHONUNBUFFERED=1
+  #- SERVER_VTU=172.17.42.1
+ # - HTTP_PORT_VTU=9080
+  - CELERY_BROKER_URL=amqp://guest@172.17.42.1/
+#  - SSH_PORT_VTU=9022
+  - SSH_KEY=/KEY/vTU_id_rsa

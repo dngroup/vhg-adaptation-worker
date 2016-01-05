@@ -18,6 +18,9 @@ RUN /bin/bash -c "source venv/bin/activate \
     && apt-get -y install python-pip mediainfo python-dev libxslt1-dev python-dev  zlib1g-dev\
     && pip install celery pymediainfo lxml pika \
     && easy_install beautifulsoup4 "
+COPY sshkey /worker/sshkey
+RUN chown -R user:user /worker/sshkey
+RUN apt-get install -y openssh-client
 COPY adaptation/ /worker/adaptation
 RUN rm -rf /home/user/build
 RUN rm -rf /tmp/*
