@@ -1,6 +1,6 @@
 vhg-adaptation-worker:
   image: docker.io/dngroup/vhg-adaptation-worker:t-nova
-
+  command: /bin/bash -c "while ! nc -z rabbitmq 5672; do sleep 3; source venv/bin/activate  && celery worker -A adaptation.commons -Q $QUEUE; done"
   environment:
   - QUEUE=hard
   - PYTHONUNBUFFERED=1
@@ -18,12 +18,14 @@ rabbitmq:
   image: rabbitmq:3.5.4-management
   ports:
     - "8672:5672"
-    - "15672"
+    - "25672:15672"
+
 
 nginx:
   image: nginx
   volumes:
    - ../data:/usr/share/nginx/html
+
 
 vTUMOCK:
   image: dngroup/vhg-adaptation-worker-hardmock
