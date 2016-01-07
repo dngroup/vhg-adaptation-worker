@@ -1,0 +1,31 @@
+vhg-adaptation-worker:
+  image: docker.io/dngroup/vhg-adaptation-worker:t-nova
+
+  environment:
+  - QUEUE=hard
+  - PYTHONUNBUFFERED=1
+  - SERVER_VTU=vTUMOCK
+  - HTTP_PORT_VTU=80
+  - CELERY_BROKER_URL=amqp://guest@rabbitmq/
+  - SSH_PORT_VTU=22
+#  - SSH_KEY=/KEY/vTU_id_rsa
+  links:
+   - rabbitmq
+   - nginx
+   - vTUMOCK
+
+rabbitmq:
+  image: rabbitmq:3.5.4-management
+  ports:
+    - "8672:5672"
+    - "15672"
+
+nginx:
+  image: nginx
+  volumes:
+   - ../data:/usr/share/nginx/html
+
+vTUMOCK:
+  image: dngroup/vhg-adaptation-worker-hardmock
+  ports:
+    - "80"

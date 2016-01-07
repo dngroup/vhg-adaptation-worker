@@ -1,5 +1,5 @@
 __author__ = 'nherbaut dbourasseau'
-
+# coding: utf-8
 import urllib
 import subprocess
 import math
@@ -15,6 +15,8 @@ from celery.utils.log import get_task_logger
 from lxml import etree
 # config import
 from .settings import *
+# for md5
+import hashlib
 # celery import
 from celery import Celery
 # media info wrapper import
@@ -110,6 +112,7 @@ def publish_output(*args, **kwargs):
     context = args[1]
     name = context["name"]
     output_folder = context["folder_out"]
+    context["md5"] = md5(context["absolute_name"])
     if swift_connection is None:
         logger.warn("swift connection is not active, skipping streamer upload")
 
@@ -128,10 +131,10 @@ def publish_output(*args, **kwargs):
 
         path = name  # + ".mp4"
         # for path in paths:
-        filepath = os.path.abspath(os.path.join(root, path))
+        filepath = context["absolute_name"]  # os.path.abspath(os.path.join(root, path))
         with open(filepath) as f:
             content_type, encoding = mimetypes.guess_type(filepath)
-            swift_connection.put_object(container, os.path.join(root, path)[len(output_folder) + 1:], f,
+            swift_connection.put_object(container, context["absolute_name"][len(output_folder) + 1:], f,
                                         content_type=content_type)
 
     return context
@@ -160,19 +163,28 @@ def notify(*args, **kwargs):
     return context
 
 
-@app.task()
-def deploy_original_file(*args, **kwargs):
-    context = args[0]
-    encoding_folder = get_transcoded_folder(context)
-    if not os.path.exists(encoding_folder):
-        os.makedirs(encoding_folder)
-    shutil.copyfile(context["original_file"], os.path.join(encoding_folder, "original.mp4"))
-    return context
+# @app.task()
+# def deploy_original_file(*args, **kwargs):
+#     context = args[0]
+#     encoding_folder = get_transcoded_folder(context)
+#     if not os.path.exists(encoding_folder):
+#         os.makedirs(encoding_folder)
+#     shutil.copyfile(context["original_file"], os.path.join(encoding_folder, "original.mp4"))
+#     return context
 
 
 @app.task()
 def ddo(url):
     encode_workflow.delay(url=url)
+
+
+@app.task()
+def md5(file):
+    hash = hashlib.md5()
+    with open(file, "rb") as f:
+        for chunk in iter(lambda: f.read(4096), b""):
+            hash.update(chunk)
+    return hash.hexdigest()
 
 
 # docker run -ite FRONTAL_HOSTNAME="192.168.236.81" -e FRONTAL_PORT="8080" -p 8080:8080 nherbaut/adapted-video-osgi-bundle
@@ -239,7 +251,8 @@ def encode_workflow(*args, **kwargs):
     context_original = copy.deepcopy(context)
     context_original["name"] = "original"
     context_original["folder_out"] = context["original_file"]
-    publish_output(context_original)
+    context_original = publish_output(context_original)
+    context_original = notify(context_original, main_task_id=main_task_id, quality="original", md5=context_original["md5"])
     context = get_video_size(context)
     # context = add_playlist_header(context)
 
@@ -253,7 +266,8 @@ def encode_workflow(*args, **kwargs):
         context_loop = transcode(context_loop, bitrate=encodingprofil.bitrate, segtime=4, name=encodingprofil.name,
                                  codec=encodingprofil.codec)
         context_loop = publish_output(context_loop)
-        context_loop = notify(context_loop, main_task_id=main_task_id, quality=encodingprofil.name)
+        context_loop = notify(context_loop, main_task_id=main_task_id, quality=encodingprofil.name,
+                              md5=context_loop["md5"])
         # context_loop = chunk_hls(context_loop, segtime=4)
         # context_loop = add_playlist_info(context_loop)
 
@@ -300,8 +314,6 @@ def createXML(*args, **kwargs):
     local = etree.SubElement(inxml, 'local')
     stream = etree.SubElement(local, 'stream')
     stream.text = context["id"]
-
-    # TODO: NEED LIST
     for encodingprofil in encodingprofils:
         print(encodingprofil.name)
         #    context_loop = copy.deepcopy(context)
@@ -349,7 +361,7 @@ def createXML(*args, **kwargs):
         print("folder already exist")
         pass
     outFile = open(home + "/worker/" + context["id"] + '.xml', 'w')
-    doc.write(outFile, xml_declaration=True, encoding='utf-8', pretty_print = True)
+    doc.write(outFile, xml_declaration=True, encoding='utf-8', pretty_print=True)
     context["xml_file"] = home + "/worker/" + context["id"] + '.xml'
     return context
 
@@ -406,9 +418,9 @@ def encode_workflow_hard(*args, **kwargs):
                  "folder_in": config["folder_in"]})
     context_original = copy.deepcopy(context)
     context_original["name"] = "original"
-    context_original["folder_out"] = context["original_file"]
-    publish_output(context_original)
 
+    context_original = publish_output(context_original)
+    context_original = notify(context_original, main_task_id=main_task_id, quality="original", md5=context_original["md5"])
     context = get_video_size(context)
     # context = add_playlist_header(context)
     context = send_file_SSH(context=context, path="/vTU/vTU/input/", file=context["original_file"])
@@ -417,27 +429,38 @@ def encode_workflow_hard(*args, **kwargs):
 
     try:
         os.makedirs(context['folder_out'])
-    except:
-        pass
-    for encodingprofil in encodingprofils:
-        print(encodingprofil.name)
-        context_loop = copy.deepcopy(context)
-        context_loop["name"] = encodingprofil.name
-        context_loop["folder_in"] = context_loop["folder_out"]
-        # context_loop["id"]=context["id"]+context_loop["name"]
+    except OSError, e:
+        # be happy if someone already created the path
+        if (e.strerror != "File exists"):
+            raise
+        # pass
+    start = time.time();
+    while ((start + COEF_WAIT_TIME * context["track_duration"] / 1000 + STATIC_WAIT_TIME) - time.time() > 0 and len(encodingprofils)>0):
+        for encodingprofil in encodingprofils:
+            print(encodingprofil.name)
+            context_loop = copy.deepcopy(context)
+            context_loop["name"] = encodingprofil.name
+            context_loop["folder_in"] = context_loop["folder_out"]
+            # context_loop["id"]=context["id"]+context_loop["name"]
+            context_loop["url"] = "http://" + serverVTU + ":" + httpPortVTU + "/vTU/output/" + time.strftime(
+                "%Y.%m.%d") + "/" + context_loop["id"] + context_loop["name"] + ".mp4"
+            context_loop["id"] = context["id"] + context_loop["name"]
 
+            try:
+                context_loop = download_file(context=context_loop)
 
-        context_loop["url"] = "http://" + serverVTU + ":" + httpPortVTU + "/vTU/output/" + time.strftime(
-            "%Y.%m.%d") + "/" + context_loop[
-                                  "id"] + context_loop["name"]+ ".mp4"
-        context_loop["id"] = context["id"] + context_loop["name"]
-        context_loop = download_file(context=context_loop, retry=True)
-        context_loop["folder_out"] = context["original_file"]
-
-        context_loop = publish_output(context_loop)
-        context_loop = notify(context_loop, main_task_id=main_task_id, quality=encodingprofil.name)
-        # context_loop = chunk_hls(context_loop, segtime=4)
-        # context_loop = add_playlist_info(context_loop)
+                context_loop = publish_output(context_loop)
+                context_loop = notify(context_loop, main_task_id=main_task_id, quality=encodingprofil.name,
+                                      md5=context_loop["md5"])
+                encodingprofils.remove(encodingprofil)
+            except IOError as e:
+                if (e.args[1] == 404):
+                    print str(e.args[1]) + " retry download"
+                else:
+                    break
+                time.sleep(0.2)
+                # context_loop = chunk_hls(context_loop, segtime=4)
+                # context_loop = add_playlist_info(context_loop)
 
 
 @app.task()
@@ -454,31 +477,12 @@ def download_file(*args, **kwargs):
 
     print(("downloading in %s", context["original_file"]))
     opener = urllib.URLopener()
-    retry = True
-    while retry:
-        try:
-            opener.retrieve(context["url"], context["original_file"])
-            print(("downloaded in %s", context["original_file"]))
-            break
-        except IOError as e:
-
-            if (e.args[1] == 404):
-                try:
-                    retry = kwargs["retry"]
-
-                except KeyError as d:
-                    retry = False
-                    raise e
-
-                print str(e.args[1]) + " retry download"
-            else:
-                raise e
-            time.sleep(0.2)
-
-    return context
+    opener.retrieve(context["url"], context["original_file"])
+    print(("downloaded in %s", context["original_file"]))
+    context["absolute_name"] = context["original_file"]
+    return context  # @app.task()
 
 
-# @app.task()
 # def download_file2(*args, **kwargs):
 #     print((args, kwargs))
 #     context = kwargs["context"]
@@ -514,6 +518,7 @@ def get_video_size(*args, **kwargs):
             print(("video is %d, %d" % (track.height, track.width)))
             context["track_width"] = track.width
             context["track_height"] = track.height
+            context["track_duration"] = track.duration
             return context
     raise AssertionError("failed to read video info from " + context["original_file"])
 
@@ -581,6 +586,7 @@ def transcode(*args, **kwargs):
                     shell=True)
     elpased = time.time() - start
     print("time to encode the video: " + str(elpased) + "s")
+    context["absolute_name"] = get_transcoded_file(context)
     return context
 
 

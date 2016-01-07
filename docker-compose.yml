@@ -4,6 +4,7 @@ vhg-adaptation-worker:
   volumes:
    - .:/KEY
   environment:
+  - QUEUE=hard
   - PYTHONUNBUFFERED=1
   #- SERVER_VTU=172.17.42.1
  # - HTTP_PORT_VTU=9080

@@ -20,7 +20,7 @@ RUN /bin/bash -c "source venv/bin/activate \
     && easy_install beautifulsoup4 "
 COPY sshkey /worker/sshkey
 RUN chown -R user:user /worker/sshkey
-RUN apt-get install -y openssh-client
+RUN apt-get install -y openssh-client netcat
 COPY adaptation/ /worker/adaptation
 RUN rm -rf /home/user/build
 RUN rm -rf /tmp/*
@@ -30,6 +30,7 @@ RUN chown -R user:user /var/www
 RUN /bin/bash -c "source venv/bin/activate \
     && pip install python-swiftclient"
 USER user
+ENV QUEUE soft
 WORKDIR /worker
 CMD /bin/bash -c "source venv/bin/activate \ 
-    && celery worker -A adaptation.commons"
+    && celery worker -A adaptation.commons -q $QUEUE"
