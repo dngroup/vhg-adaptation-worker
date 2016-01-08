@@ -1,10 +1,12 @@
 #!/bin/bash
 
+echo "stop container"
 cd soft
 QUEUE=soft docker-compose kill
 cd ../hard
 QUEUE=hard docker-compose kill
 QUEUE=hard docker-compose up -d
+echo "start container"
 wget --tries=0 http://localhost:25672/cli/rabbitmqadmin -O rabbitmqadmin
 chmod +x rabbitmqadmin
 

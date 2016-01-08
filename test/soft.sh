@@ -1,7 +1,11 @@
 #!/bin/bash
 
-cd soft
+echo "stop container"
+cd hard
+QUEUE=hard docker-compose kill
+cd ../soft
 QUEUE=soft docker-compose kill
+echo "start container"
 QUEUE=soft docker-compose up -d
 wget --tries=0 http://localhost:25672/cli/rabbitmqadmin -O rabbitmqadmin
 chmod +x rabbitmqadmin
@@ -17,17 +21,20 @@ echo ---------------------------------------------
 echo ---------------------------------------------
 echo ---------------------------------------------
 #./rabbitmqadmin --port=25672 get queue=transcode-result
-sleep 30
+sleep 10
 result=$(./rabbitmqadmin --port=25672 get queue=transcode-result requeue=false | grep transcode-result |  sed "s/.* | \({.*} \).*|/\1/g"|python -m json.tool|grep md5|sed "s/.*md5\": \"\([0-9a-fA-F]*\)\".*/\1/g")
 echo $result
 
 if [[ "$result" == "a3b9f93268cc8b5e4a09bda51d19f85e" ]]; then
     echo "ok"
+    echo "test transcode result maybe not equal but if you get a md5 is maybe ok"
+    sleep 20
     result=$(./rabbitmqadmin --port=25672 get queue=transcode-result requeue=false | grep transcode-result |  sed "s/.* | \({.*} \).*|/\1/g"|python -m json.tool|grep md5|sed "s/.*md5\": \"\([0-9a-fA-F]*\)\".*/\1/g")
     echo $result
 
     if [[ "$result" == "e46f43484d4bbc2b21b1900e930143ee" ]]; then
         echo "ok"
+        sleep 10
         result=$(./rabbitmqadmin --port=25672 get queue=transcode-result requeue=false | grep transcode-result |  sed "s/.* | \({.*} \).*|/\1/g"|python -m json.tool|grep md5|sed "s/.*md5\": \"\([0-9a-fA-F]*\)\".*/\1/g")
         echo $result
 
