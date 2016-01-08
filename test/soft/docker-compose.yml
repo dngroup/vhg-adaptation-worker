@@ -12,6 +12,7 @@ vhgadaptationworker:
   links:
    - rabbitmq
    - nginx
+  cpuset: "0"
 
 rabbitmq:
   image: rabbitmq:3.5.4-management

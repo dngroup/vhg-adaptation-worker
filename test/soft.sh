@@ -25,20 +25,20 @@ sleep 10
 result=$(./rabbitmqadmin --port=25672 get queue=transcode-result requeue=false | grep transcode-result |  sed "s/.* | \({.*} \).*|/\1/g"|python -m json.tool|grep md5|sed "s/.*md5\": \"\([0-9a-fA-F]*\)\".*/\1/g")
 echo $result
 
-if [[ "$result" == "a3b9f93268cc8b5e4a09bda51d19f85e" ]]; then
+if [[ "$result" == "63e0f7021b3fc6d55d4d6fd9a8b745ac" ]]; then
     echo "ok"
     echo "test transcode result maybe not equal but if you get a md5 is maybe ok"
     sleep 20
     result=$(./rabbitmqadmin --port=25672 get queue=transcode-result requeue=false | grep transcode-result |  sed "s/.* | \({.*} \).*|/\1/g"|python -m json.tool|grep md5|sed "s/.*md5\": \"\([0-9a-fA-F]*\)\".*/\1/g")
     echo $result
 
-    if [[ "$result" == "e46f43484d4bbc2b21b1900e930143ee" ]]; then
+    if [[ "$result" == "2c7309b9e6eae4a9fb43d34e88f71c57" ]]; then
         echo "ok"
         sleep 10
         result=$(./rabbitmqadmin --port=25672 get queue=transcode-result requeue=false | grep transcode-result |  sed "s/.* | \({.*} \).*|/\1/g"|python -m json.tool|grep md5|sed "s/.*md5\": \"\([0-9a-fA-F]*\)\".*/\1/g")
         echo $result
 
-        if [[ "$result" == "56da1b97b62c53f5d50e369b2b0c7462" ]]; then
+        if [[ "$result" == "2f7bdabf7b917bf0c4be51e0f887ab4a" ]]; then
             echo "ok"
         else
             echo "not ok";
