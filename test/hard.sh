@@ -36,11 +36,12 @@ if [[ "$result" == "a3b9f93268cc8b5e4a09bda51d19f85e" ]]; then
             echo "not ok";
             exit -1
         fi
-        exit 0
+
     else
         echo "not ok";
         exit -1
     fi
+    docker-compose stop
     exit 0
 else
     echo "not ok";

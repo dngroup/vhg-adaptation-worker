@@ -575,7 +575,7 @@ def transcode(*args, **kwargs):
         except OSError as e:
             pass
             # ffmpeg -i " FILE " -c:v libx264 -profile:v main -level 3.1 -b:v "BITRATE"k -vf scale=640:480 -c:a aac -strict -2 -force_key_frames expr:gte\(t,n_forced*4\) OUPUT.mp4
-    command_line = "ffmpeg -i " + context[
+    command_line = "ffmpeg -y -i " + context[
         "original_file"] + " -c:v " + context["codec"] + " -b:v " + str(context[
                                                                             "bitrate"]) + "k -vf scale=" + dimsp + " -c:a aac -strict -2 -force_key_frames expr:gte\(t,n_forced*" + str(
         context["segtime"]) + "\) " + get_transcoded_file(
