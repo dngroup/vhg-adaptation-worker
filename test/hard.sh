@@ -1,13 +1,16 @@
 #!/bin/bash
 
-cd hard
-docker-compose kill
-docker-compose up -d
+cd soft
+QUEUE=soft docker-compose kill
+cd ../hard
+QUEUE=hard docker-compose kill
+QUEUE=hard docker-compose up -d
 wget --tries=0 http://localhost:25672/cli/rabbitmqadmin -O rabbitmqadmin
 chmod +x rabbitmqadmin
 
 echo ---------------------------------------------
 #./rabbitmqadmin --port=25672 -f long -d 3 list queues
+sleep 3
 echo send request
 ./rabbitmqadmin --port=25672 publish exchange=amq.default routing_key=hard properties='{"content_encoding":"utf-8", "content_type":"application/json"}'  payload='{"id":"testhard","task":"adaptation.commons.encode_workflow_hard","args":[],"kwargs":{"url":"http://nginx/1.mp4","qualities":{"quality":[{"name":"h264_gpu","bitrate":500,"codec":"h264_gpu","height":320},{"name":"h265_gpu","bitrate":250,"codec":"h265_gpu","height":320}]}},"retries":1,"eta":"2015-12-09T07:54:42+01:00"}'
 echo $?

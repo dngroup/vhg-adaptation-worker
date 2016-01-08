@@ -1,4 +1,4 @@
-vhg-adaptation-worker:
+vhgadaptationworker:
   image: docker.io/dngroup/vhg-adaptation-worker:t-nova
   command: /bin/bash -c "while ! nc -z rabbitmq 5672; do sleep 3; source venv/bin/activate  && celery worker -A adaptation.commons -Q $QUEUE; done"
   environment:
