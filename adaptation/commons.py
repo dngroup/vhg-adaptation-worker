@@ -463,6 +463,94 @@ def encode_workflow_hard(*args, **kwargs):
                 # context_loop = add_playlist_info(context_loop)
 
 
+@app.task(bind=True)
+def staging_and_admission_workflow(*args, **kwargs):
+    self = args[0]
+    main_task_id = self.request.id
+    url = kwargs["url"]
+ 
+    print("------------")
+
+    # context = download_file(
+    #     context={"url": url, "folder_out": os.path.join(config["folder_out"], main_task_id), "id": main_task_id,
+    #              "folder_in": config["folder_in"]})
+    # context_original = copy.deepcopy(context)
+    # context_original["name"] = "original"
+    # context_original = publish_output(context_original)
+    # context_original = notify(context_original, main_task_id=main_task_id, quality="original", md5=context_original["md5"])
+    
+    q_hard = channel_pika.queue_declare(queue='hard', durable=True, exclusive=False, auto_delete=False)
+    q_hard_leng= q_hard.method.message_count
+    encoder = "hard"
+    context["task_name"]="adaptation.commons.encode_workflow_hard"
+    if (q_hard_leng > 0):
+
+        # To equilibrated soft and hard
+        # q_soft = channel_pika.queue_declare(queue='soft', durable=True, exclusive=False, auto_delete=False)
+        # q_soft_leng= q_soft.method.message_count
+        # if (q_soft_leng < q_hard_leng):
+        #   encoder = "soft"
+        #   context["task_name"]="adaptation.commons.encode_workflow"
+
+        encoder = "soft"
+        context["task_name"]="adaptation.commons.encode_workflow"
+    qualities = kwargs["qualities"]
+    for quality in qualities["quality"]:
+        print(quality)
+        if (quality["codec"].find("264")!=-1):
+            if encoder=="soft":
+                quality["codec"]="libx264"
+            elif encoder == "hard":
+                quality["codec"]="h264-gpu"
+            else:
+                print "no encoder set"
+        elif (quality["codec"].find("265")!=-1):
+            if encoder=="soft":
+                quality["codec"]="libx265"
+            elif encoder == "hard":
+                quality["codec"]="h265-gpu"
+            else:
+                print "no encoder set"
+        else:
+            print "codec is not equal at h264 or h265 (set h264 by default)"
+            if encoder=="soft":
+                quality["codec"]="libx264"
+            elif encoder == "hard":
+                quality["codec"]="h264-gpu"
+            else:
+                print "no encoder set"
+    context["queue"] =encoder
+
+    push_message(context,id=main_task_id,task=context["task_name"] , kwargs={"url": url, "qualities":qualities},retries=self.request.retries,eta=self.request.eta)
+    print encoder
+
+
+@app.task(bind=True)
+def push_message(*args, **kwargs):
+    self = args[0]
+    context = args[1]
+    logger.debug("sending %s to result queue" % json.dumps(kwargs))
+    try:
+        channel_pika.basic_publish(exchange='',
+                                   routing_key=context["queue"],
+                                   body=json.dumps(kwargs))
+    except:
+        logger.error("failed to connect to pika, trying again one more time")
+        connection = pika.BlockingConnection(pika_con_params)
+
+        channel_pika = connection.channel()
+        channel_pika.queue_declare(queue=context["queue"], durable=True, exclusive=False, auto_delete=False)
+        properties = pika.BasicProperties(content_encoding='utf-8',
+                                          content_type='application/json')
+        channel_pika.basic_publish(exchange='',
+                                   routing_key=context["queue"],
+                                   body=json.dumps(kwargs),
+                                   properties= properties)
+
+    return context
+
+
+
 @app.task()
 def download_file(*args, **kwargs):
     print((args, kwargs))

@@ -13,6 +13,8 @@ vhgadaptationworker:
    - rabbitmq
    - nginx
   cpuset: "0"
+  volumes:
+   - ../data/out:/var/www/out
 
 rabbitmq:
   image: rabbitmq:3.5.4-management
