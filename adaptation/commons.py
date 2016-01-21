@@ -17,6 +17,9 @@ from lxml import etree
 from .settings import *
 # for md5
 import hashlib
+import uuid
+#for post  transcoding result
+import requests,urlparse
 # celery import
 from celery import Celery
 # media info wrapper import
@@ -106,36 +109,60 @@ def run_background(*args):
 #
 #     return context
 
+# @app.task(bind=True)
+# def publish_output(*args, **kwargs):
+#     self = args[0]
+#     context = args[1]
+#     name = context["name"]
+#     output_folder = context["folder_out"]
+#     context["md5"] = md5(context["absolute_name"])
+#     if swift_connection is None:
+#         logger.warn("swift connection is not active, skipping streamer upload")
+#
+#     else:
+#         headers = {}
+#         container = os.path.basename(output_folder)
+#         headers["X-Container-Read"] = " .r:*"
+#         headers["X-Container-Meta-Access-Control-Allow-Origin"] = "*"
+#         headers["X-Container-Meta-Access-Control-Allow-Method"] = "GET"
+#
+#         swift_connection.put_container(container, headers)
+#         # for object in os.walk(output_folder):
+#         encoding_folder = get_transcoded_folder(context)
+#         # paths = object[2]
+#         root = encoding_folder
+#
+#         path = name  # + ".mp4"
+#         # for path in paths:
+#         filepath = context["absolute_name"]  # os.path.abspath(os.path.join(root, path))
+#         with open(filepath) as f:
+#             content_type, encoding = mimetypes.guess_type(filepath)
+#             swift_connection.put_object(container, context["absolute_name"][len(output_folder) + 1:], f,
+#                                         content_type=content_type)
+#
+#     return context
+
 @app.task(bind=True)
 def publish_output(*args, **kwargs):
     self = args[0]
     context = args[1]
     name = context["name"]
+    returnaddr = urlparse.urljoin(context["returnaddr"]+"/",  name)
+
+
     output_folder = context["folder_out"]
     context["md5"] = md5(context["absolute_name"])
-    if swift_connection is None:
-        logger.warn("swift connection is not active, skipping streamer upload")
 
-    else:
-        headers = {}
-        container = os.path.basename(output_folder)
-        headers["X-Container-Read"] = " .r:*"
-        headers["X-Container-Meta-Access-Control-Allow-Origin"] = "*"
-        headers["X-Container-Meta-Access-Control-Allow-Method"] = "GET"
+    print(("POST "+ context["absolute_name"]+ " to " + returnaddr))
 
-        swift_connection.put_container(container, headers)
-        # for object in os.walk(output_folder):
-        encoding_folder = get_transcoded_folder(context)
-        # paths = object[2]
-        root = encoding_folder
+    # files = {'upload_file': open(context["absolute_name"],'rb')}
+    data = open(context["absolute_name"],'rb').read()
+    r = requests.post(returnaddr, data,headers={'Content-Type': 'application/octet-stream'})
 
-        path = name  # + ".mp4"
-        # for path in paths:
-        filepath = context["absolute_name"]  # os.path.abspath(os.path.join(root, path))
-        with open(filepath) as f:
-            content_type, encoding = mimetypes.guess_type(filepath)
-            swift_connection.put_object(container, context["absolute_name"][len(output_folder) + 1:], f,
-                                        content_type=content_type)
+    print("POST")
+
+
+    print(r.status_code, r.reason)
 
     return context
 
@@ -235,6 +262,7 @@ def encode_workflow(*args, **kwargs):
     main_task_id = self.request.id
     url = kwargs["url"]
     qualities = kwargs["qualities"]
+    returnaddr = self.request.returnaddr
     encodingprofils = [];
     for quality in qualities["quality"]:
         print(quality)
@@ -246,13 +274,13 @@ def encode_workflow(*args, **kwargs):
     print("(------------")
 
     context = download_file(
-        context={"url": url, "folder_out": os.path.join(config["folder_out"], main_task_id), "id": main_task_id,
+        context={"url": url,"returnaddr": returnaddr, "folder_out": os.path.join(config["folder_out"], main_task_id), "id": main_task_id,
                  "folder_in": config["folder_in"]})
-    context_original = copy.deepcopy(context)
-    context_original["name"] = "original"
-    context_original["folder_out"] = context["original_file"]
-    context_original = publish_output(context_original)
-    context_original = notify(context_original, main_task_id=main_task_id, quality="original", md5=context_original["md5"])
+    # context_original = copy.deepcopy(context)
+    # context_original["name"] = "original"
+    # context_original["folder_out"] = context["original_file"]
+    # context_original = publish_output(context_original)
+    # context_original = notify(context_original, main_task_id=main_task_id, quality="original", md5=context_original["md5"])
     context = get_video_size(context)
     # context = add_playlist_header(context)
 
@@ -401,6 +429,7 @@ def encode_workflow_hard(*args, **kwargs):
     main_task_id = self.request.id
     url = kwargs["url"]
     qualities = kwargs["qualities"]
+    returnaddr = self.request.returnaddr
     serverVTU = os.environ.get("SERVER_VTU", SERVER_VTU)
     # sshPortVTU = os.environ.get("SSH_PORT_VTU", SSH_PORT_VTU)
     httpPortVTU = os.environ.get("HTTP_PORT_VTU", HTTP_PORT_VTU)
@@ -414,13 +443,13 @@ def encode_workflow_hard(*args, **kwargs):
     print("------------")
 
     context = download_file(
-        context={"url": url, "folder_out": os.path.join(config["folder_out"], main_task_id), "id": main_task_id,
+        context={"url": url,"returnaddr": returnaddr, "folder_out": os.path.join(config["folder_out"], main_task_id), "id": main_task_id,
                  "folder_in": config["folder_in"]})
-    context_original = copy.deepcopy(context)
-    context_original["name"] = "original"
-
-    context_original = publish_output(context_original)
-    context_original = notify(context_original, main_task_id=main_task_id, quality="original", md5=context_original["md5"])
+    # context_original = copy.deepcopy(context)
+    # context_original["name"] = "original"
+    #
+    # context_original = publish_output(context_original)
+    # context_original = notify(context_original, main_task_id=main_task_id, quality="original", md5=context_original["md5"])
     context = get_video_size(context)
     # context = add_playlist_header(context)
     context = send_file_SSH(context=context, path="/vTU/vTU/input/", file=context["original_file"])
@@ -468,8 +497,10 @@ def staging_and_admission_workflow(*args, **kwargs):
     self = args[0]
     main_task_id = self.request.id
     url = kwargs["url"]
- 
+    qualities = kwargs["qualities"]
     print("------------")
+    context={"url": url, "folder_out": os.path.join(config["folder_out"], main_task_id), "id": main_task_id,
+             "folder_in": config["folder_in"]}
 
     # context = download_file(
     #     context={"url": url, "folder_out": os.path.join(config["folder_out"], main_task_id), "id": main_task_id,
@@ -478,7 +509,47 @@ def staging_and_admission_workflow(*args, **kwargs):
     # context_original["name"] = "original"
     # context_original = publish_output(context_original)
     # context_original = notify(context_original, main_task_id=main_task_id, quality="original", md5=context_original["md5"])
-    
+
+    qualitiesNoSpe = {"quality":[]}
+
+    for quality in qualities["quality"]:
+
+        print(quality)
+        if (quality["codec"].find("SOFT")!=-1):
+            context["task_name"]="adaptation.commons.encode_workflow"
+            context["queue"] ="soft"
+            if quality["codec"].find("264")!=-1:
+                quality["codec"]="libx264"
+            elif quality["codec"].find("265")!=-1:
+                quality["codec"]="libx265"
+            else:
+                print "no encoder specified"
+                quality["codec"]="libx264"
+            push_message(context,id=main_task_id,task=context["task_name"] , kwargs={"url": url, "qualities":{"quality":[quality]}},retries=self.request.retries,eta=self.request.eta,returnaddr=self.request.returnaddr)
+        elif (quality["codec"].find("HARD")!=-1):
+
+            context["task_name"]="adaptation.commons.encode_workflow_hard"
+            context["queue"] ="hard"
+            if quality["codec"].find("264")!=-1:
+                quality["codec"]="h264-gpu"
+            elif quality["codec"].find("265")!=-1:
+                quality["codec"]="h265-gpu"
+            else:
+                print "no encoder specified"
+                quality["codec"]="h264-gpu"
+            # qualities["quality"].remove(quality)
+            push_message(context,id=main_task_id,task=context["task_name"] , kwargs={"url": url, "qualities":{"quality":[quality]}},retries=self.request.retries,eta=self.request.eta,returnaddr=self.request.returnaddr)
+
+        else:
+            print "Encoder is not specified "
+            qualitiesNoSpe["quality"].insert(0,quality)
+
+    if len(qualitiesNoSpe["quality"])==0:
+        return 0
+
+
+
+
     q_hard = channel_pika.queue_declare(queue='hard', durable=True, exclusive=False, auto_delete=False)
     q_hard_leng= q_hard.method.message_count
     encoder = "hard"
@@ -494,8 +565,8 @@ def staging_and_admission_workflow(*args, **kwargs):
 
         encoder = "soft"
         context["task_name"]="adaptation.commons.encode_workflow"
-    qualities = kwargs["qualities"]
-    for quality in qualities["quality"]:
+
+    for quality in qualitiesNoSpe["quality"]:
         print(quality)
         if (quality["codec"].find("264")!=-1):
             if encoder=="soft":
@@ -521,7 +592,7 @@ def staging_and_admission_workflow(*args, **kwargs):
                 print "no encoder set"
     context["queue"] =encoder
 
-    push_message(context,id=main_task_id,task=context["task_name"] , kwargs={"url": url, "qualities":qualities},retries=self.request.retries,eta=self.request.eta)
+    push_message(context,id=main_task_id,task=context["task_name"] , kwargs={"url": url, "qualities":qualitiesNoSpe},retries=self.request.retries,eta=self.request.eta,returnaddr=self.request.returnaddr)
     print encoder
 
 
@@ -561,7 +632,12 @@ def download_file(*args, **kwargs):
     # filname=split[len(split)-1]
     # context["original_folder"] = os.path.join(folder_in, context["id"])
     # os.mkdir(context["original_folder"])
-    context["original_file"] = os.path.join(folder_in, context["id"])
+    # temp =uuid.uuid4()
+
+    # new UUID set here for not conflic name when post on vTU server
+    name =  context["id"] +str(uuid.uuid4().hex)
+
+    context["original_file"] = os.path.join(folder_in, name)
 
     print(("downloading in %s", context["original_file"]))
     opener = urllib.URLopener()
@@ -571,26 +647,7 @@ def download_file(*args, **kwargs):
     return context  # @app.task()
 
 
-# def download_file2(*args, **kwargs):
-#     print((args, kwargs))
-#     context = kwargs["context"]
-#     folder_in = context["folder_in"]
-#     print(("downloading %s", context["url"]))
-#     # split =context["url"].split("/")
-#     # filname=split[len(split)-1]
-#     # context["original_folder"] = os.path.join(folder_in, context["id"])
-#     # os.mkdir(context["original_folder"])
-#     context["original_file"] = os.path.join(folder_in, context["id"])
-#     print(("downloading in %s", context["original_file"]))
-#     # opener = urllib.URLopener()
-#     a=urllib.urlopen(context["url"])
-#     while ( a.getcode()==404):
-#         print "404"
-#         time.sleep(0.2)
-#     a.ge
-#     opener.retrieve(context["url"], context["original_file"])
-#     print(("downloaded in %s", context["original_file"]))
-#     return context
+
 
 @app.task
 # def get_video_size(input_file):
@@ -664,7 +721,7 @@ def transcode(*args, **kwargs):
             pass
             # ffmpeg -i " FILE " -c:v libx264 -profile:v main -level 3.1 -b:v "BITRATE"k -vf scale=640:480 -c:a aac -strict -2 -force_key_frames expr:gte\(t,n_forced*4\) OUPUT.mp4
     command_line = "ffmpeg -y -i " + context[
-        "original_file"] + " -c:v " + context["codec"] + " -b:v " + str(context[
+        "original_file"] + " -vcodec " + context["codec"] + " -b:v " + str(context[
                                                                             "bitrate"]) + "k -vf scale=" + dimsp + " -c:a aac -strict -2 -force_key_frames expr:gte\(t,n_forced*" + str(
         context["segtime"]) + "\) " + get_transcoded_file(
         context)
