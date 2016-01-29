@@ -8,7 +8,7 @@ import json
 import copy
 import mimetypes
 import pika
-import swiftclient
+#import swiftclient
 import time
 import tempfile
 from celery.utils.log import get_task_logger
@@ -53,23 +53,23 @@ connection = pika.BlockingConnection(pika_con_params)
 channel_pika = connection.channel()
 channel_pika.queue_declare(queue='transcode-result', durable=True, exclusive=False, auto_delete=False)
 
-logger.info("connecting to swift")
-
-try:
-    swift_authurl, swift_username, swift_password = (os.environ["ST_AUTH"], os.environ["ST_USER"], os.environ["ST_KEY"])
-    swift_connection = swiftclient.Connection(authurl=swift_authurl, user=swift_username, key=swift_password)
-    # verifying swift connectivity
-    swift_connection.head_account()
-
-except KeyError as key:
-    # no swift => no data will be sent to streamer
-    logger.warning("swift is NOT configured, nothing will be sent to streamer")
-    # swift_authurl,swift_username, swift_password = (None,None,None)
-    swift_connection = None
-except swiftclient.ClientException as ce:
-    logger.warning("swift credentials are did NOT pass, nothing will be sent to streamer")
-    # swift_authurl,swift_username, swift_password = (None,None,None)
-    swift_connection = None
+# logger.info("connecting to swift")
+#
+# try:
+#     swift_authurl, swift_username, swift_password = (os.environ["ST_AUTH"], os.environ["ST_USER"], os.environ["ST_KEY"])
+#     swift_connection = swiftclient.Connection(authurl=swift_authurl, user=swift_username, key=swift_password)
+#     # verifying swift connectivity
+#     swift_connection.head_account()
+#
+# except KeyError as key:
+#     # no swift => no data will be sent to streamer
+#     logger.warning("swift is NOT configured, nothing will be sent to streamer")
+#     # swift_authurl,swift_username, swift_password = (None,None,None)
+#     swift_connection = None
+# except swiftclient.ClientException as ce:
+#     logger.warning("swift credentials are did NOT pass, nothing will be sent to streamer")
+#     # swift_authurl,swift_username, swift_password = (None,None,None)
+#     swift_connection = None
 
 
 def run_background(*args):
@@ -341,7 +341,7 @@ def createXML(*args, **kwargs):
     inxml = etree.SubElement(page, 'in')
     local = etree.SubElement(inxml, 'local')
     stream = etree.SubElement(local, 'stream')
-    stream.text = context["id"]
+    stream.text = context["nameid"]
     for encodingprofil in encodingprofils:
         print(encodingprofil.name)
         #    context_loop = copy.deepcopy(context)
@@ -365,7 +365,7 @@ def createXML(*args, **kwargs):
         acodec = etree.SubElement(codec, 'acodec')
         acodec.text = "aac"
         vbitrate = etree.SubElement(codec, 'vbitrate')
-        vbitrate.text = str(encodingprofil.bitrate)
+        vbitrate.text = str(encodingprofil.bitrate) + "k"
         abitrate = etree.SubElement(codec, 'abitrate')
         abitrate.text = "128k"
         vsizewidth = etree.SubElement(codec, 'vsizewidth')
@@ -388,9 +388,9 @@ def createXML(*args, **kwargs):
     except OSError as e:
         print("folder already exist")
         pass
-    outFile = open(home + "/worker/" + context["id"] + '.xml', 'w')
+    outFile = open(home + "/worker/" + context["nameid"] + '.xml', 'w')
     doc.write(outFile, xml_declaration=True, encoding='utf-8', pretty_print=True)
-    context["xml_file"] = home + "/worker/" + context["id"] + '.xml'
+    context["xml_file"] = home + "/worker/" + context["nameid"] + '.xml'
     return context
 
 
@@ -430,6 +430,7 @@ def encode_workflow_hard(*args, **kwargs):
     url = kwargs["url"]
     qualities = kwargs["qualities"]
     returnaddr = self.request.returnaddr
+
     serverVTU = os.environ.get("SERVER_VTU", SERVER_VTU)
     # sshPortVTU = os.environ.get("SSH_PORT_VTU", SSH_PORT_VTU)
     httpPortVTU = os.environ.get("HTTP_PORT_VTU", HTTP_PORT_VTU)
@@ -487,7 +488,7 @@ def encode_workflow_hard(*args, **kwargs):
                     print str(e.args[1]) + " retry download"
                 else:
                     break
-                time.sleep(0.2)
+                time.sleep(0.5)
                 # context_loop = chunk_hls(context_loop, segtime=4)
                 # context_loop = add_playlist_info(context_loop)
 
@@ -635,11 +636,11 @@ def download_file(*args, **kwargs):
     # temp =uuid.uuid4()
 
     # new UUID set here for not conflic name when post on vTU server
-    name =  context["id"] +str(uuid.uuid4().hex)
+    context["nameid"]  =  context["id"] +str(uuid.uuid4().hex)
 
-    context["original_file"] = os.path.join(folder_in, name)
+    context["original_file"] = os.path.join(folder_in, context["nameid"])
 
-    print(("downloading in %s", context["original_file"]))
+    print(("downloading in "+ context["original_file"] + " from " +context["url"] ))
     opener = urllib.URLopener()
     opener.retrieve(context["url"], context["original_file"])
     print(("downloaded in %s", context["original_file"]))

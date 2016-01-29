@@ -15,8 +15,9 @@ RUN mkdir -p /worker/adaptation
 WORKDIR /worker/
 RUN virtualenv -p /usr/bin/python2.7 venv
 RUN /bin/bash -c "source venv/bin/activate \
+    && apt-get update\
     && apt-get -y install python-pip mediainfo python-dev libxslt1-dev python-dev  zlib1g-dev\
-    && pip install celery pymediainfo lxml pika \
+    && pip install celery pymediainfo lxml pika requests\
     && easy_install beautifulsoup4 "
 COPY sshkey /worker/sshkey
 RUN chown -R user:user /worker/sshkey
@@ -27,8 +28,8 @@ RUN rm -rf /tmp/*
 RUN mkdir -p /var/www/in
 RUN mkdir -p /var/www/out
 RUN chown -R user:user /var/www
-RUN /bin/bash -c "source venv/bin/activate \
-    && pip install python-swiftclient"
+#RUN /bin/bash -c "source venv/bin/activate \
+#    && pip install python-swiftclient"
 USER user
 ENV QUEUE soft
 WORKDIR /worker
