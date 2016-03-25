@@ -1,3 +1,5 @@
+from adaptation import context
+
 __author__ = 'nherbaut dbourasseau'
 # coding: utf-8
 import urllib
@@ -145,24 +147,25 @@ def run_background(*args):
 @app.task(bind=True)
 def publish_output(*args, **kwargs):
     self = args[0]
-    context = args[1]
-    name = context["name"]
-    returnaddr = urlparse.urljoin(context["returnaddr"]+"/",  name)
+    context = args[1];
+    name = context["name"];
+    returnURL = kwargs["returnURL"];
+
 
 
     output_folder = context["folder_out"]
     context["md5"] = md5(context["absolute_name"])
 
-    print(("POST "+ context["absolute_name"]+ " to " + returnaddr))
+    print(("PUT "+ context["absolute_name"]+ " to " + returnURL))
 
     # files = {'upload_file': open(context["absolute_name"],'rb')}
     data = open(context["absolute_name"],'rb').read()
-    r = requests.post(returnaddr, data,headers={'Content-Type': 'application/octet-stream'})
+    r = requests.put(returnURL, data,headers={'Content-Type': 'application/octet-stream'})
 
-    print("POST")
+    print("PUT")
 
 
-    print(r.status_code, r.reason)
+    print(r.content)
 
     return context
 
@@ -262,7 +265,7 @@ def encode_workflow(*args, **kwargs):
     main_task_id = self.request.id
     url = kwargs["url"]
     qualities = kwargs["qualities"]
-    returnaddr = self.request.returnaddr
+    returnURL = self.request.returnURL
     encodingprofils = [];
     for quality in qualities["quality"]:
         print(quality)
@@ -274,7 +277,7 @@ def encode_workflow(*args, **kwargs):
     print("(------------")
 
     context = download_file(
-        context={"url": url,"returnaddr": returnaddr, "folder_out": os.path.join(config["folder_out"], main_task_id), "id": main_task_id,
+        context={"url": url,"returnURL": returnURL, "folder_out": os.path.join(config["folder_out"], main_task_id), "id": main_task_id,
                  "folder_in": config["folder_in"]})
     # context_original = copy.deepcopy(context)
     # context_original["name"] = "original"
@@ -293,7 +296,7 @@ def encode_workflow(*args, **kwargs):
         context_loop = compute_target_size(context_loop, target_height=encodingprofil.target_height)
         context_loop = transcode(context_loop, bitrate=encodingprofil.bitrate, segtime=4, name=encodingprofil.name,
                                  codec=encodingprofil.codec)
-        context_loop = publish_output(context_loop)
+        context_loop = publish_output(context_loop, returnURL = encodingprofil.returnURL)
         context_loop = notify(context_loop, main_task_id=main_task_id, quality=encodingprofil.name,
                               md5=context_loop["md5"])
         # context_loop = chunk_hls(context_loop, segtime=4)
@@ -429,7 +432,7 @@ def encode_workflow_hard(*args, **kwargs):
     main_task_id = self.request.id
     url = kwargs["url"]
     qualities = kwargs["qualities"]
-    returnaddr = self.request.returnaddr
+    returnURL = self.request.returnURL
 
     serverVTU = os.environ.get("SERVER_VTU", SERVER_VTU)
     # sshPortVTU = os.environ.get("SSH_PORT_VTU", SSH_PORT_VTU)
@@ -444,7 +447,7 @@ def encode_workflow_hard(*args, **kwargs):
     print("------------")
 
     context = download_file(
-        context={"url": url,"returnaddr": returnaddr, "folder_out": os.path.join(config["folder_out"], main_task_id), "id": main_task_id,
+        context={"url": url,"returnURL": returnURL, "folder_out": os.path.join(config["folder_out"], main_task_id), "id": main_task_id,
                  "folder_in": config["folder_in"]})
     # context_original = copy.deepcopy(context)
     # context_original["name"] = "original"
@@ -479,7 +482,7 @@ def encode_workflow_hard(*args, **kwargs):
             try:
                 context_loop = download_file(context=context_loop)
 
-                context_loop = publish_output(context_loop)
+                context_loop = publish_output(context_loop, returnURL = encodingprofil.returnURL)
                 context_loop = notify(context_loop, main_task_id=main_task_id, quality=encodingprofil.name,
                                       md5=context_loop["md5"])
                 encodingprofils.remove(encodingprofil)
@@ -503,19 +506,25 @@ def staging_and_admission_workflow(*args, **kwargs):
     context={"url": url, "folder_out": os.path.join(config["folder_out"], main_task_id), "id": main_task_id,
              "folder_in": config["folder_in"]}
 
-    # context = download_file(
-    #     context={"url": url, "folder_out": os.path.join(config["folder_out"], main_task_id), "id": main_task_id,
-    #              "folder_in": config["folder_in"]})
-    # context_original = copy.deepcopy(context)
-    # context_original["name"] = "original"
-    # context_original = publish_output(context_original)
-    # context_original = notify(context_original, main_task_id=main_task_id, quality="original", md5=context_original["md5"])
-
+    context = download_file(
+        context={"url": url, "folder_out": os.path.join(config["folder_out"], main_task_id), "id": main_task_id,
+                 "folder_in": config["folder_in"]})
+    context_original = copy.deepcopy(context)
+    context_original["name"] = "original"
+    context_original = publish_output(context_original, returnURL = kwargs["returnURL"])
+    context_original = notify(context_original, main_task_id=main_task_id, quality="Original", md5=context_original["md5"])
+    context_original = get_video_size(context)
+    url = kwargs["cacheURL"]
+    context["url"] = kwargs["cacheURL"]
     qualitiesNoSpe = {"quality":[]}
 
     for quality in qualities["quality"]:
 
         print(quality)
+        if (quality["height"]>context_original["track_height"]):
+            print ('remove this quality ',quality["height"])
+            continue
+
         if (quality["codec"].find("SOFT")!=-1):
             context["task_name"]="adaptation.commons.encode_workflow"
             context["queue"] ="soft"
@@ -526,7 +535,7 @@ def staging_and_admission_workflow(*args, **kwargs):
             else:
                 print "no encoder specified"
                 quality["codec"]="libx264"
-            push_message(context,id=main_task_id,task=context["task_name"] , kwargs={"url": url, "qualities":{"quality":[quality]}},retries=self.request.retries,eta=self.request.eta,returnaddr=self.request.returnaddr)
+            push_message(context,id=main_task_id,task=context["task_name"] , kwargs={"url": url, "qualities":{"quality":[quality]}},retries=self.request.retries,eta=self.request.eta,returnURL=quality["return_url"])
         elif (quality["codec"].find("HARD")!=-1):
 
             context["task_name"]="adaptation.commons.encode_workflow_hard"
@@ -539,7 +548,7 @@ def staging_and_admission_workflow(*args, **kwargs):
                 print "no encoder specified"
                 quality["codec"]="h264-gpu"
             # qualities["quality"].remove(quality)
-            push_message(context,id=main_task_id,task=context["task_name"] , kwargs={"url": url, "qualities":{"quality":[quality]}},retries=self.request.retries,eta=self.request.eta,returnaddr=self.request.returnaddr)
+            push_message(context,id=main_task_id,task=context["task_name"] , kwargs={"url": url, "qualities":{"quality":[quality]}},retries=self.request.retries,eta=self.request.eta,returnURL=quality["return_url"])
 
         else:
             print "Encoder is not specified "
@@ -547,9 +556,6 @@ def staging_and_admission_workflow(*args, **kwargs):
 
     if len(qualitiesNoSpe["quality"])==0:
         return 0
-
-
-
 
     q_hard = channel_pika.queue_declare(queue='hard', durable=True, exclusive=False, auto_delete=False)
     q_hard_leng= q_hard.method.message_count
@@ -591,9 +597,11 @@ def staging_and_admission_workflow(*args, **kwargs):
                 quality["codec"]="h264-gpu"
             else:
                 print "no encoder set"
-    context["queue"] =encoder
+        # quality["return_url"]
+        context["queue"] =encoder
+        push_message(context,id=main_task_id,task=context["task_name"] , kwargs={"url": url, "qualities":{"quality":[quality]}},retries=self.request.retries,eta=self.request.eta,returnURL=quality["returnURL"])
+        # push_message(context,id=main_task_id,task=context["task_name"] , kwargs={"url": url, "qualities":qualitiesNoSpe},retries=self.request.retries,eta=self.request.eta,returnURL=self.request.returnURL)
 
-    push_message(context,id=main_task_id,task=context["task_name"] , kwargs={"url": url, "qualities":qualitiesNoSpe},retries=self.request.retries,eta=self.request.eta,returnaddr=self.request.returnaddr)
     print encoder
 
 
