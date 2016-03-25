@@ -516,9 +516,9 @@ def staging_and_admission_workflow(*args, **kwargs):
     context_original = get_video_size(context)
     url = kwargs["cacheURL"]
     context["url"] = kwargs["cacheURL"]
-    qualitiesNoSpe = {"quality":[]}
+    qualitiesNoSpe = {"quality":[]} #notgood
 
-    for quality in qualities["quality"]:
+    for quality in qualities:
 
         print(quality)
         if (quality["height"]>context_original["track_height"]):
