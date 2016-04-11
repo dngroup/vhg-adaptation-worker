@@ -261,6 +261,7 @@ def md5(file):
 
 @app.task(bind=True)
 def encode_workflow(*args, **kwargs):
+    timestart=time.time()
     self = args[0]
     main_task_id = self.request.id
     url = kwargs["url"]
@@ -279,14 +280,7 @@ def encode_workflow(*args, **kwargs):
     context = download_file(
         context={"url": url,"returnURL": returnURL, "folder_out": os.path.join(config["folder_out"], main_task_id), "id": main_task_id,
                  "folder_in": config["folder_in"]})
-    # context_original = copy.deepcopy(context)
-    # context_original["name"] = "original"
-    # context_original["folder_out"] = context["original_file"]
-    # context_original = publish_output(context_original)
-    # context_original = notify(context_original, main_task_id=main_task_id, quality="original", md5=context_original["md5"])
     context = get_video_size(context)
-    # context = add_playlist_header(context)
-
     for encodingprofil in encodingprofils:
         print(encodingprofil.name)
 
@@ -298,15 +292,7 @@ def encode_workflow(*args, **kwargs):
                                  codec=encodingprofil.codec)
         context_loop = publish_output(context_loop, returnURL = encodingprofil.returnURL)
         context_loop = notify(context_loop, main_task_id=main_task_id, quality=encodingprofil.name,
-                              md5=context_loop["md5"])
-        # context_loop = chunk_hls(context_loop, segtime=4)
-        # context_loop = add_playlist_info(context_loop)
-
-        # context = add_playlist_footer(context)
-        # context = chunk_dash(context, segtime=4, )
-        # context = edit_dash_playlist(context)
-
-        # context = notify(context, complete=True, main_task_id=main_task_id)
+                              md5=context_loop["md5"],timestart=timestart,timeend=time.time())
 
 
 @app.task
@@ -428,6 +414,7 @@ def createXML(*args, **kwargs):
 # }
 @app.task(bind=True)
 def encode_workflow_hard(*args, **kwargs):
+    timestart=time.time()
     self = args[0]
     main_task_id = self.request.id
     url = kwargs["url"]
@@ -449,13 +436,7 @@ def encode_workflow_hard(*args, **kwargs):
     context = download_file(
         context={"url": url,"returnURL": returnURL, "folder_out": os.path.join(config["folder_out"], main_task_id), "id": main_task_id,
                  "folder_in": config["folder_in"]})
-    # context_original = copy.deepcopy(context)
-    # context_original["name"] = "original"
-    #
-    # context_original = publish_output(context_original)
-    # context_original = notify(context_original, main_task_id=main_task_id, quality="original", md5=context_original["md5"])
     context = get_video_size(context)
-    # context = add_playlist_header(context)
     context = send_file_SSH(context=context, path="/vTU/vTU/input/", file=context["original_file"])
     context = createXML(encodingprofils=encodingprofils, context=context)
     context = send_file_SSH(context=context, path="/vTU/vTU/spool/", file=context["xml_file"])
@@ -484,7 +465,7 @@ def encode_workflow_hard(*args, **kwargs):
 
                 context_loop = publish_output(context_loop, returnURL = encodingprofil.returnURL)
                 context_loop = notify(context_loop, main_task_id=main_task_id, quality=encodingprofil.name,
-                                      md5=context_loop["md5"])
+                                      md5=context_loop["md5"],timestart=timestart,timeend=time.time())
                 encodingprofils.remove(encodingprofil)
             except IOError as e:
                 if (e.args[1] == 404):
@@ -498,6 +479,7 @@ def encode_workflow_hard(*args, **kwargs):
 
 @app.task(bind=True)
 def staging_and_admission_workflow(*args, **kwargs):
+    timestart=time.time()
     self = args[0]
     main_task_id = self.request.id
     url = kwargs["url"]
@@ -512,7 +494,7 @@ def staging_and_admission_workflow(*args, **kwargs):
     context_original = copy.deepcopy(context)
     context_original["name"] = "original"
     context_original = publish_output(context_original, returnURL = kwargs["returnURL"])
-    context_original = notify(context_original, main_task_id=main_task_id, quality="Original", md5=context_original["md5"])
+    context_original = notify(context_original, main_task_id=main_task_id, quality="Original", md5=context_original["md5"],timestart=timestart,timeend=time.time())
     context_original = get_video_size(context)
     url = kwargs["cacheURL"]
     context["url"] = kwargs["cacheURL"]
@@ -557,21 +539,23 @@ def staging_and_admission_workflow(*args, **kwargs):
     if len(qualitiesNoSpe["quality"])==0:
         return 0
 
-    q_hard = channel_pika.queue_declare(queue='hard', durable=True, exclusive=False, auto_delete=False)
-    q_hard_leng= q_hard.method.message_count
-    encoder = "hard"
-    context["task_name"]="adaptation.commons.encode_workflow_hard"
-    if (q_hard_leng > 0):
 
-        # To equilibrated soft and hard
-        # q_soft = channel_pika.queue_declare(queue='soft', durable=True, exclusive=False, auto_delete=False)
-        # q_soft_leng= q_soft.method.message_count
-        # if (q_soft_leng < q_hard_leng):
-        #   encoder = "soft"
-        #   context["task_name"]="adaptation.commons.encode_workflow"
 
-        encoder = "soft"
-        context["task_name"]="adaptation.commons.encode_workflow"
+    # q_hard = channel_pika.queue_declare(queue='hard', durable=True, exclusive=False, auto_delete=False)
+    # q_hard_leng = q_hard.method.message_count
+    # encoder = "hard"
+    # context["task_name"]="adaptation.commons.encode_workflow_hard"
+    # if (q_hard_leng > 0):
+    #
+    #     # To equilibrated soft and hard
+    #     # q_soft = channel_pika.queue_declare(queue='soft', durable=True, exclusive=False, auto_delete=False)
+    #     # q_soft_leng= q_soft.method.message_count
+    #     # if (q_soft_leng < q_hard_leng):
+    #     #   encoder = "soft"
+    #     #   context["task_name"]="adaptation.commons.encode_workflow"
+
+    encoder = "soft"
+    context["task_name"]="adaptation.commons.encode_workflow"
 
     for quality in qualitiesNoSpe["quality"]:
         print(quality)
