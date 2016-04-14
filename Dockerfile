@@ -34,4 +34,4 @@ USER user
 ENV QUEUE soft
 WORKDIR /worker
 CMD /bin/bash -c "source venv/bin/activate \ 
-    && celery worker -A adaptation.commons -q $QUEUE"
+    && celery worker -A adaptation.commons -Q $QUEUE"
