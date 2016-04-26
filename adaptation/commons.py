@@ -157,10 +157,15 @@ def publish_output(*args, **kwargs):
     context["md5"] = md5(context["absolute_name"])
 
     print(("PUT "+ context["absolute_name"]+ " to " + returnURL))
-
+    content_type, encoding = mimetypes.guess_type(context["absolute_name"])
+    if content_type is None:
+        content_type="video/mp4"
     # files = {'upload_file': open(context["absolute_name"],'rb')}
     data = open(context["absolute_name"],'rb').read()
-    r = requests.put(returnURL, data,headers={'Content-Type': 'application/octet-stream'})
+    #         headers["X-Container-Read"] = " .r:*"
+#         headers["X-Container-Meta-Access-Control-Allow-Origin"] = "*"
+#         headers["X-Container-Meta-Access-Control-Allow-Method"] = "GET"
+    r = requests.put(returnURL, data,headers={'Content-Type': content_type,"X-Container-Read":" .r:*","X-Container-Meta-Access-Control-Allow-Origin": "*","X-Container-Meta-Access-Control-Allow-Method": "GET"})
 
     print("PUT")
 
