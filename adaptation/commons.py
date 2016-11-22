@@ -1,18 +1,16 @@
-from adaptation import context
-
 __author__ = 'nherbaut dbourasseau'
 # coding: utf-8
-import urllib
-import subprocess
-import math
-import shutil
-import json
 import copy
+import json
+import math
 import mimetypes
+import shutil
+import subprocess
+import urllib
+
 import pika
-#import swiftclient
+# import swiftclient
 import time
-import tempfile
 from celery.utils.log import get_task_logger
 from lxml import etree
 # config import
@@ -20,8 +18,8 @@ from .settings import *
 # for md5
 import hashlib
 import uuid
-#for post  transcoding result
-import requests,urlparse
+# for post  transcoding result
+import requests
 # celery import
 from celery import Celery
 # media info wrapper import
@@ -54,6 +52,7 @@ pika_con_params.socket_timeout = 300
 connection = pika.BlockingConnection(pika_con_params)
 channel_pika = connection.channel()
 channel_pika.queue_declare(queue='transcode-result', durable=True, exclusive=False, auto_delete=False)
+
 
 # logger.info("connecting to swift")
 #
@@ -151,26 +150,26 @@ def publish_output(*args, **kwargs):
     name = context["name"];
     returnURL = kwargs["returnURL"];
 
-
-
     output_folder = context["folder_out"]
     context["md5"] = md5(context["absolute_name"])
 
-    print(("PUT "+ context["absolute_name"]+ " to " + returnURL))
+    print(("PUT " + context["absolute_name"] + " to " + returnURL))
     content_type, encoding = mimetypes.guess_type(context["absolute_name"])
     if content_type is None:
-        content_type="video/mp4"
+        content_type = "video/mp4"
     # files = {'upload_file': open(context["absolute_name"],'rb')}
-    data = open(context["absolute_name"],'rb').read()
+    data = open(context["absolute_name"], 'rb').read()
     #         headers["X-Container-Read"] = " .r:*"
-#         headers["X-Container-Meta-Access-Control-Allow-Origin"] = "*"
-#         headers["X-Container-Meta-Access-Control-Allow-Method"] = "GET"
-    r = requests.put(returnURL, data,headers={'Content-Type': content_type,"X-Container-Read":" .r:*","X-Container-Meta-Access-Control-Allow-Origin": "*","X-Container-Meta-Access-Control-Allow-Method": "GET"})
+    #         headers["X-Container-Meta-Access-Control-Allow-Origin"] = "*"
+    #         headers["X-Container-Meta-Access-Control-Allow-Method"] = "GET"
+
+    r = requests.put(returnURL, data, headers={'Content-Type': content_type, "X-Container-Read": " .r:*",
+                                               "X-Container-Meta-Access-Control-Allow-Origin": "*",
+                                               "X-Container-Meta-Access-Control-Allow-Method": "GET"})
 
     print("PUT")
 
-
-    print(r.content)
+    # print(r.content)
 
     return context
 
@@ -266,7 +265,7 @@ def md5(file):
 
 @app.task(bind=True)
 def encode_workflow(*args, **kwargs):
-    timestart=time.time()
+    timestart = time.time()
     self = args[0]
     main_task_id = self.request.id
     url = kwargs["url"]
@@ -283,7 +282,8 @@ def encode_workflow(*args, **kwargs):
     print("(------------")
 
     context = download_file(
-        context={"url": url,"returnURL": returnURL, "folder_out": os.path.join(config["folder_out"], main_task_id), "id": main_task_id,
+        context={"url": url, "returnURL": returnURL, "folder_out": os.path.join(config["folder_out"], main_task_id),
+                 "id": main_task_id,
                  "folder_in": config["folder_in"]})
     context = get_video_size(context)
     for encodingprofil in encodingprofils:
@@ -295,9 +295,11 @@ def encode_workflow(*args, **kwargs):
         context_loop = compute_target_size(context_loop, target_height=encodingprofil.target_height)
         context_loop = transcode(context_loop, bitrate=encodingprofil.bitrate, segtime=4, name=encodingprofil.name,
                                  codec=encodingprofil.codec)
-        context_loop = publish_output(context_loop, returnURL = encodingprofil.returnURL)
+        context_loop = publish_output(context_loop, returnURL=encodingprofil.returnURL)
         context_loop = notify(context_loop, main_task_id=main_task_id, quality=encodingprofil.name,
-                              md5=context_loop["md5"],timestart=timestart,timeend=time.time())
+                              md5=context_loop["md5"], timestart=timestart, timeend=time.time())
+        context_loop = remove_video(context_loop)
+    context = remove_video(context)
 
 
 @app.task
@@ -419,7 +421,7 @@ def createXML(*args, **kwargs):
 # }
 @app.task(bind=True)
 def encode_workflow_hard(*args, **kwargs):
-    timestart=time.time()
+    timestart = time.time()
     self = args[0]
     main_task_id = self.request.id
     url = kwargs["url"]
@@ -439,7 +441,8 @@ def encode_workflow_hard(*args, **kwargs):
     print("------------")
 
     context = download_file(
-        context={"url": url,"returnURL": returnURL, "folder_out": os.path.join(config["folder_out"], main_task_id), "id": main_task_id,
+        context={"url": url, "returnURL": returnURL, "folder_out": os.path.join(config["folder_out"], main_task_id),
+                 "id": main_task_id,
                  "folder_in": config["folder_in"]})
     context = get_video_size(context)
     context = send_file_SSH(context=context, path="/vTU/vTU/input/", file=context["original_file"])
@@ -452,9 +455,10 @@ def encode_workflow_hard(*args, **kwargs):
         # be happy if someone already created the path
         if (e.strerror != "File exists"):
             raise
-        # pass
+            # pass
     start = time.time();
-    while ((start + COEF_WAIT_TIME * context["track_duration"] / 1000 + STATIC_WAIT_TIME) - time.time() > 0 and len(encodingprofils)>0):
+    while ((start + COEF_WAIT_TIME * context["track_duration"] / 1000 + STATIC_WAIT_TIME) - time.time() > 0 and len(
+            encodingprofils) > 0):
         for encodingprofil in encodingprofils:
             print(encodingprofil.name)
             context_loop = copy.deepcopy(context)
@@ -468,9 +472,10 @@ def encode_workflow_hard(*args, **kwargs):
             try:
                 context_loop = download_file(context=context_loop)
 
-                context_loop = publish_output(context_loop, returnURL = encodingprofil.returnURL)
+                context_loop = publish_output(context_loop, returnURL=encodingprofil.returnURL)
                 context_loop = notify(context_loop, main_task_id=main_task_id, quality=encodingprofil.name,
-                                      md5=context_loop["md5"],timestart=timestart,timeend=time.time())
+                                      md5=context_loop["md5"], timestart=timestart, timeend=time.time())
+                context_loop = remove_video(context_loop)
                 encodingprofils.remove(encodingprofil)
             except IOError as e:
                 if (e.args[1] == 404):
@@ -482,69 +487,80 @@ def encode_workflow_hard(*args, **kwargs):
                 # context_loop = add_playlist_info(context_loop)
 
 
+@app.task()
+def remove_video(context):
+    os.remove(context["absolute_name"])
+    return context
+
+
 @app.task(bind=True)
 def staging_and_admission_workflow(*args, **kwargs):
-    timestart=time.time()
+    timestart = time.time()
     self = args[0]
     main_task_id = self.request.id
     url = kwargs["url"]
     qualities = kwargs["qualities"]
     print("------------")
-    context={"url": url, "folder_out": os.path.join(config["folder_out"], main_task_id), "id": main_task_id,
-             "folder_in": config["folder_in"]}
+    context = {"url": url, "folder_out": os.path.join(config["folder_out"], main_task_id), "id": main_task_id,
+               "folder_in": config["folder_in"]}
 
     context = download_file(
         context={"url": url, "folder_out": os.path.join(config["folder_out"], main_task_id), "id": main_task_id,
                  "folder_in": config["folder_in"]})
     context_original = copy.deepcopy(context)
     context_original["name"] = "original"
-    context_original = publish_output(context_original, returnURL = kwargs["returnURL"])
-    context_original = notify(context_original, main_task_id=main_task_id, quality="Original", md5=context_original["md5"],timestart=timestart,timeend=time.time())
-    context_original = get_video_size(context)
+    context_original = publish_output(context_original, returnURL=kwargs["returnURL"])
+
+    context_original = notify(context_original, main_task_id=main_task_id, quality="Original",
+                              md5=context_original["md5"], timestart=timestart, timeend=time.time())
+    context_original = get_video_size(context);
+    context_original = remove_video(context)
     url = kwargs["cacheURL"]
     context["url"] = kwargs["cacheURL"]
-    qualitiesNoSpe = {"quality":[]} #notgood
+    qualitiesNoSpe = {"quality": []}  # notgood
 
     for quality in qualities:
 
         print(quality)
-        if (quality["height"]>context_original["track_height"]):
-            print ('remove this quality ',quality["height"])
+        if (quality["height"] > context_original["track_height"]):
+            print ('remove this quality ', quality["height"])
             continue
 
-        if (quality["codec"].find("SOFT")!=-1):
-            context["task_name"]="adaptation.commons.encode_workflow"
-            context["queue"] ="soft"
-            if quality["codec"].find("264")!=-1:
-                quality["codec"]="libx264"
-            elif quality["codec"].find("265")!=-1:
-                quality["codec"]="libx265"
+        if (quality["codec"].find("SOFT") != -1):
+            context["task_name"] = "adaptation.commons.encode_workflow"
+            context["queue"] = "soft"
+            if quality["codec"].find("264") != -1:
+                quality["codec"] = "libx264"
+            elif quality["codec"].find("265") != -1:
+                quality["codec"] = "libx265"
             else:
                 print "no encoder specified"
-                quality["codec"]="libx264"
-            push_message(context,id=main_task_id,task=context["task_name"] , kwargs={"url": url, "qualities":{"quality":[quality]}},retries=self.request.retries,eta=self.request.eta,returnURL=quality["return_url"])
-        elif (quality["codec"].find("HARD")!=-1):
+                quality["codec"] = "libx264"
+            push_message(context, id=main_task_id, task=context["task_name"],
+                         kwargs={"url": url, "qualities": {"quality": [quality]}}, retries=self.request.retries,
+                         eta=self.request.eta, returnURL=quality["return_url"])
+        elif (quality["codec"].find("HARD") != -1):
 
-            context["task_name"]="adaptation.commons.encode_workflow_hard"
-            context["queue"] ="hard"
-            if quality["codec"].find("264")!=-1:
-                quality["codec"]="h264-gpu"
-            elif quality["codec"].find("265")!=-1:
-                quality["codec"]="h265-gpu"
+            context["task_name"] = "adaptation.commons.encode_workflow_hard"
+            context["queue"] = "hard"
+            if quality["codec"].find("264") != -1:
+                quality["codec"] = "h264-gpu"
+            elif quality["codec"].find("265") != -1:
+                quality["codec"] = "h265-gpu"
             else:
                 print "no encoder specified"
-                quality["codec"]="h264-gpu"
+                quality["codec"] = "h264-gpu"
             # qualities["quality"].remove(quality)
-            push_message(context,id=main_task_id,task=context["task_name"] , kwargs={"url": url, "qualities":{"quality":[quality]}},retries=self.request.retries,eta=self.request.eta,returnURL=quality["return_url"])
+            push_message(context, id=main_task_id, task=context["task_name"],
+                         kwargs={"url": url, "qualities": {"quality": [quality]}}, retries=self.request.retries,
+                         eta=self.request.eta, returnURL=quality["return_url"])
 
         else:
             print "Encoder is not specified "
-            qualitiesNoSpe["quality"].insert(0,quality)
+            qualitiesNoSpe["quality"].insert(0, quality)
 
-    if len(qualitiesNoSpe["quality"])==0:
+    if len(qualitiesNoSpe["quality"]) == 0:
         return 0
-
-
 
     # q_hard = channel_pika.queue_declare(queue='hard', durable=True, exclusive=False, auto_delete=False)
     # q_hard_leng = q_hard.method.message_count
@@ -560,35 +576,37 @@ def staging_and_admission_workflow(*args, **kwargs):
     #     #   context["task_name"]="adaptation.commons.encode_workflow"
 
     encoder = "soft"
-    context["task_name"]="adaptation.commons.encode_workflow"
+    context["task_name"] = "adaptation.commons.encode_workflow"
 
     for quality in qualitiesNoSpe["quality"]:
         print(quality)
-        if (quality["codec"].find("264")!=-1):
-            if encoder=="soft":
-                quality["codec"]="libx264"
+        if (quality["codec"].find("264") != -1):
+            if encoder == "soft":
+                quality["codec"] = "libx264"
             elif encoder == "hard":
-                quality["codec"]="h264-gpu"
+                quality["codec"] = "h264-gpu"
             else:
                 print "no encoder set"
-        elif (quality["codec"].find("265")!=-1):
-            if encoder=="soft":
-                quality["codec"]="libx265"
+        elif (quality["codec"].find("265") != -1):
+            if encoder == "soft":
+                quality["codec"] = "libx265"
             elif encoder == "hard":
-                quality["codec"]="h265-gpu"
+                quality["codec"] = "h265-gpu"
             else:
                 print "no encoder set"
         else:
             print "codec is not equal at h264 or h265 (set h264 by default)"
-            if encoder=="soft":
-                quality["codec"]="libx264"
+            if encoder == "soft":
+                quality["codec"] = "libx264"
             elif encoder == "hard":
-                quality["codec"]="h264-gpu"
+                quality["codec"] = "h264-gpu"
             else:
                 print "no encoder set"
         # quality["return_url"]
-        context["queue"] =encoder
-        push_message(context,id=main_task_id,task=context["task_name"] , kwargs={"url": url, "qualities":{"quality":[quality]}},retries=self.request.retries,eta=self.request.eta,returnURL=quality["returnURL"])
+        context["queue"] = encoder
+        push_message(context, id=main_task_id, task=context["task_name"],
+                     kwargs={"url": url, "qualities": {"quality": [quality]}}, retries=self.request.retries,
+                     eta=self.request.eta, returnURL=quality["returnURL"])
         # push_message(context,id=main_task_id,task=context["task_name"] , kwargs={"url": url, "qualities":qualitiesNoSpe},retries=self.request.retries,eta=self.request.eta,returnURL=self.request.returnURL)
 
     print encoder
@@ -614,10 +632,9 @@ def push_message(*args, **kwargs):
         channel_pika.basic_publish(exchange='',
                                    routing_key=context["queue"],
                                    body=json.dumps(kwargs),
-                                   properties= properties)
+                                   properties=properties)
 
     return context
-
 
 
 @app.task()
@@ -633,18 +650,16 @@ def download_file(*args, **kwargs):
     # temp =uuid.uuid4()
 
     # new UUID set here for not conflic name when post on vTU server
-    context["nameid"]  =  context["id"] +str(uuid.uuid4().hex)
+    context["nameid"] = context["id"] + str(uuid.uuid4().hex)
 
     context["original_file"] = os.path.join(folder_in, context["nameid"])
 
-    print(("downloading in "+ context["original_file"] + " from " +context["url"] ))
+    print(("downloading in " + context["original_file"] + " from " + context["url"]))
     opener = urllib.URLopener()
     opener.retrieve(context["url"], context["original_file"])
     print(("downloaded in %s", context["original_file"]))
     context["absolute_name"] = context["original_file"]
     return context  # @app.task()
-
-
 
 
 @app.task
@@ -720,7 +735,7 @@ def transcode(*args, **kwargs):
             # ffmpeg -i " FILE " -c:v libx264 -profile:v main -level 3.1 -b:v "BITRATE"k -vf scale=640:480 -c:a aac -strict -2 -force_key_frames expr:gte\(t,n_forced*4\) OUPUT.mp4
     command_line = "ffmpeg -y -i " + context[
         "original_file"] + " -vcodec " + context["codec"] + " -b:v " + str(context[
-                                                                            "bitrate"]) + "k -vf scale=" + dimsp + " -c:a aac -strict -2 -force_key_frames expr:gte\(t,n_forced*" + str(
+                                                                               "bitrate"]) + "k -vf scale=" + dimsp + " -c:a aac -strict -2 -force_key_frames expr:gte\(t,n_forced*" + str(
         context["segtime"]) + "\) " + get_transcoded_file(
         context)
     print(("transcoding commandline %s" % command_line))
