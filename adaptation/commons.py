@@ -537,7 +537,7 @@ def staging_and_admission_workflow(*args, **kwargs):
             else:
                 print "no encoder specified"
                 quality["codec"]="libx264"
-            push_message(context,id=main_task_id,task=context["task_name"] , kwargs={"url": url, "qualities":{"quality":[quality]}},retries=self.request.retries,eta=self.request.eta,returnURL=quality["return_url"])
+            push_message(context,id=main_task_id,task=context["task_name"] ,  kwargs={"url": url, "qualities":{"quality":[quality]}},retries=self.request.retries,eta=self.request.eta,returnURL=quality["return_url"])
         elif (quality["codec"].find("HARD")!=-1):
 
             context["task_name"]="adaptation.commons.encode_workflow_hard"
@@ -626,6 +626,9 @@ def push_message(*args, **kwargs):
         channel_pika.queue_declare(queue=context["queue"], durable=True, exclusive=False, auto_delete=False)
         properties = pika.BasicProperties(content_encoding='utf-8',
                                           content_type='application/json')
+
+        #add args with the new version of celery
+        kwargs['args']=[]
         channel_pika.basic_publish(exchange='',
                                    routing_key=context["queue"],
                                    body=json.dumps(kwargs),
