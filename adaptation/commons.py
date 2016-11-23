@@ -163,9 +163,7 @@ def publish_output(*args, **kwargs):
     #         headers["X-Container-Meta-Access-Control-Allow-Origin"] = "*"
     #         headers["X-Container-Meta-Access-Control-Allow-Method"] = "GET"
 
-    r = requests.put(returnURL, data, headers={'Content-Type': content_type, "X-Container-Read": " .r:*",
-                                               "X-Container-Meta-Access-Control-Allow-Origin": "*",
-                                               "X-Container-Meta-Access-Control-Allow-Method": "GET"})
+    r = requests.put(returnURL, data, headers={'Content-Type': content_type, "X-Container-Read": ".r:*","X-Container-Meta-Access-Control-Allow-Origin": "*","X-Container-Meta-Access-Control-Allow-Method": "GET"})
 
     print("PUT")
 
