@@ -2,6 +2,7 @@ from adaptation import context
 
 __author__ = 'nherbaut dbourasseau'
 # coding: utf-8
+import locale
 import urllib
 import subprocess
 import math
@@ -35,6 +36,10 @@ from .context import get_transcoded_folder, get_transcoded_file, get_hls_transco
     get_dash_folder, get_hls_folder, get_hls_global_playlist, get_dash_mpd_file_path
 # Encoding profil
 from adaptation.EncodingProfil import EncodingProfile
+
+# force pymediainfo to use the c local
+locale.setlocale(locale.LC_CTYPE,"C.UTF-8")
+
 
 # main app for celery, configuration is in separate settings.ini file
 app = Celery('tasks')
@@ -144,6 +149,12 @@ def run_background(*args):
 #
 #     return context
 
+@app.task()
+def remove_video(context):
+    os.remove(context["absolute_name"])
+    return context
+
+
 @app.task(bind=True)
 def publish_output(*args, **kwargs):
     self = args[0]
@@ -165,7 +176,7 @@ def publish_output(*args, **kwargs):
     #         headers["X-Container-Read"] = " .r:*"
 #         headers["X-Container-Meta-Access-Control-Allow-Origin"] = "*"
 #         headers["X-Container-Meta-Access-Control-Allow-Method"] = "GET"
-    r = requests.put(returnURL, data,headers={'Content-Type': content_type,"X-Container-Read":" .r:*","X-Container-Meta-Access-Control-Allow-Origin": "*","X-Container-Meta-Access-Control-Allow-Method": "GET"})
+    r = requests.put(returnURL, data,headers={'Content-Type': content_type,"X-Container-Read":".r:*","X-Container-Meta-Access-Control-Allow-Origin": "*","X-Container-Meta-Access-Control-Allow-Method": "GET"})
 
     print("PUT")
 
@@ -298,6 +309,8 @@ def encode_workflow(*args, **kwargs):
         context_loop = publish_output(context_loop, returnURL = encodingprofil.returnURL)
         context_loop = notify(context_loop, main_task_id=main_task_id, quality=encodingprofil.name,
                               md5=context_loop["md5"],timestart=timestart,timeend=time.time())
+        context_loop = remove_video(context_loop)
+    context = remove_video(context)
 
 
 @app.task
@@ -471,6 +484,7 @@ def encode_workflow_hard(*args, **kwargs):
                 context_loop = publish_output(context_loop, returnURL = encodingprofil.returnURL)
                 context_loop = notify(context_loop, main_task_id=main_task_id, quality=encodingprofil.name,
                                       md5=context_loop["md5"],timestart=timestart,timeend=time.time())
+                context_loop = remove_video(context_loop)
                 encodingprofils.remove(encodingprofil)
             except IOError as e:
                 if (e.args[1] == 404):
@@ -501,6 +515,7 @@ def staging_and_admission_workflow(*args, **kwargs):
     context_original = publish_output(context_original, returnURL = kwargs["returnURL"])
     context_original = notify(context_original, main_task_id=main_task_id, quality="Original", md5=context_original["md5"],timestart=timestart,timeend=time.time())
     context_original = get_video_size(context)
+    context_original = remove_video(context)
     url = kwargs["cacheURL"]
     context["url"] = kwargs["cacheURL"]
     qualitiesNoSpe = {"quality":[]} #notgood
